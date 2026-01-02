@@ -456,11 +456,11 @@
       }
       
       if (event.key === 'Enter' || event.key === ' ') {
-        const option = options[currentOptionIndex];
-        if (isPathInput(option)) {
+        if (isPathInput(document.activeElement)) {
           return;
         }
         event.preventDefault();
+        const option = options[currentOptionIndex];
         if (option) {
           if (isDoneItem(option)) {
             if (!option.classList.contains('disabled')) {
