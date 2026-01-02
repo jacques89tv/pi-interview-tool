@@ -131,6 +131,25 @@ body {
   background: var(--bg-hover);
 }
 
+.option-other {
+  gap: 8px;
+}
+
+.other-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: inherit;
+  padding: 2px 0;
+}
+
+.other-input::placeholder {
+  color: var(--fg-dim);
+}
+
 .done-item {
   position: absolute;
   bottom: 12px;

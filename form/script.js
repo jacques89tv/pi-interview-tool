@@ -533,7 +533,7 @@
   }
 
   function isPathInput(el) {
-    return el && (el.classList.contains('image-path-input') || el.classList.contains('attach-inline-path'));
+    return el && (el.classList.contains('image-path-input') || el.classList.contains('attach-inline-path') || el.classList.contains('other-input'));
   }
 
   function isDropzone(el) {
@@ -911,6 +911,42 @@
         label.appendChild(text);
         list.appendChild(label);
       });
+
+      const otherLabel = document.createElement("label");
+      otherLabel.className = "option-item option-other";
+      const otherCheck = document.createElement("input");
+      otherCheck.type = question.type === "single" ? "radio" : "checkbox";
+      otherCheck.name = question.id;
+      otherCheck.value = "__other__";
+      otherCheck.id = `q-${question.id}-other`;
+      const otherInput = document.createElement("input");
+      otherInput.type = "text";
+      otherInput.className = "other-input";
+      otherInput.placeholder = "Other...";
+      otherInput.dataset.questionId = question.id;
+      otherInput.addEventListener("input", () => {
+        if (otherInput.value && !otherCheck.checked) {
+          otherCheck.checked = true;
+          if (question.type === "multi") updateDoneState(question.id);
+        }
+        debounceSave();
+      });
+      otherInput.addEventListener("focus", () => {
+        if (!otherCheck.checked) {
+          otherCheck.checked = true;
+          if (question.type === "multi") updateDoneState(question.id);
+          debounceSave();
+        }
+      });
+      otherCheck.addEventListener("change", () => {
+        debounceSave();
+        if (question.type === "multi") updateDoneState(question.id);
+        if (otherCheck.checked) otherInput.focus();
+      });
+      setupEdgeNavigation(otherInput);
+      otherLabel.appendChild(otherCheck);
+      otherLabel.appendChild(otherInput);
+      list.appendChild(otherLabel);
 
       if (question.type === "multi") {
         const doneItem = document.createElement("div");
@@ -1348,16 +1384,23 @@
     return count;
   }
 
+  function getOtherValue(questionId) {
+    const otherInput = formEl.querySelector(`.other-input[data-question-id="${escapeSelector(questionId)}"]`);
+    return otherInput ? otherInput.value : "";
+  }
+
   function getQuestionValue(question) {
     const id = question.id;
     if (question.type === "single") {
       const selected = formEl.querySelector(`input[name="${escapeSelector(id)}"]:checked`);
-      return selected ? selected.value : "";
+      if (!selected) return "";
+      if (selected.value === "__other__") return getOtherValue(id);
+      return selected.value;
     }
     if (question.type === "multi") {
       return Array.from(
         formEl.querySelectorAll(`input[name="${escapeSelector(id)}"]:checked`)
-      ).map((input) => input.value);
+      ).map((input) => input.value === "__other__" ? getOtherValue(id) : input.value).filter(v => v);
     }
     if (question.type === "text") {
       const textarea = formEl.querySelector(`textarea[data-question-id="${escapeSelector(id)}"]`);
@@ -1406,7 +1449,20 @@
           const input = formEl.querySelector(
             `input[name="${escapeSelector(question.id)}"][value="${escapeSelector(value)}"]`
           );
-          if (input) input.checked = true;
+          if (input) {
+            input.checked = true;
+          } else {
+            const otherCheck = formEl.querySelector(
+              `input[name="${escapeSelector(question.id)}"][value="__other__"]`
+            );
+            const otherInput = formEl.querySelector(
+              `.other-input[data-question-id="${escapeSelector(question.id)}"]`
+            );
+            if (otherCheck && otherInput) {
+              otherCheck.checked = true;
+              otherInput.value = value;
+            }
+          }
         }
       }
       if (question.type === "multi" && Array.isArray(value)) {
@@ -1416,12 +1472,29 @@
         checkboxes.forEach((checkbox) => {
           checkbox.checked = false;
         });
+        let otherValue = "";
         value.forEach((val) => {
           const input = formEl.querySelector(
             `input[name="${escapeSelector(question.id)}"][value="${escapeSelector(val)}"]`
           );
-          if (input) input.checked = true;
+          if (input) {
+            input.checked = true;
+          } else if (val) {
+            otherValue = val;
+          }
         });
+        if (otherValue) {
+          const otherCheck = formEl.querySelector(
+            `input[name="${escapeSelector(question.id)}"][value="__other__"]`
+          );
+          const otherInput = formEl.querySelector(
+            `.other-input[data-question-id="${escapeSelector(question.id)}"]`
+          );
+          if (otherCheck && otherInput) {
+            otherCheck.checked = true;
+            otherInput.value = otherValue;
+          }
+        }
       }
       if (question.type === "text" && typeof value === "string") {
         const textarea = formEl.querySelector(
