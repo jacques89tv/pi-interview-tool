@@ -2,6 +2,23 @@
 
 A custom tool for pi-agent that opens a web-based form to gather user responses to clarification questions.
 
+## Installation
+
+Clone or copy this directory to your pi-agent tools folder:
+
+```bash
+# Clone to user tools directory (available in all projects)
+git clone https://github.com/user/interview-tool ~/.pi/agent/tools/interview
+
+# Or copy manually
+cp -r /path/to/interview ~/.pi/agent/tools/
+```
+
+The tool is automatically discovered on next pi session. No build step required.
+
+**Requirements:**
+- pi-agent v0.31.0 or later
+
 ## Features
 
 - **Question Types**: Single-select, multi-select, text input, and image upload

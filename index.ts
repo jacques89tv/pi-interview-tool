@@ -1,13 +1,39 @@
 import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
-import type { CustomTool, CustomToolFactory } from "@mariozechner/pi-coding-agent";
+import type { CustomTool, CustomToolFactory, CustomToolAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { randomUUID } from "node:crypto";
-import open from "open";
 import { startInterviewServer, type ResponseItem } from "./server.js";
 import { validateQuestions, type QuestionsFile } from "./schema.js";
+
+async function openUrl(pi: CustomToolAPI, url: string, browser?: string): Promise<void> {
+	const platform = os.platform();
+	let result;
+	if (platform === "darwin") {
+		if (browser) {
+			result = await pi.exec("open", ["-a", browser, url]);
+		} else {
+			result = await pi.exec("open", [url]);
+		}
+	} else if (platform === "win32") {
+		if (browser) {
+			result = await pi.exec("cmd", ["/c", "start", "", browser, url]);
+		} else {
+			result = await pi.exec("cmd", ["/c", "start", "", url]);
+		}
+	} else {
+		if (browser) {
+			result = await pi.exec(browser, [url]);
+		} else {
+			result = await pi.exec("xdg-open", [url]);
+		}
+	}
+	if (result.code !== 0) {
+		throw new Error(result.stderr || `Failed to open browser (exit code ${result.code})`);
+	}
+}
 
 interface InterviewDetails {
 	status: "completed" | "cancelled" | "timeout" | "aborted";
@@ -228,11 +254,7 @@ const factory: CustomToolFactory = (pi) => {
 						url = handle.url;
 
 						try {
-							if (settings.browser) {
-								await open(url, { app: { name: settings.browser } });
-							} else {
-								await open(url);
-							}
+							await openUrl(pi, url, settings.browser);
 						} catch (err) {
 							cleanup();
 							const message = err instanceof Error ? err.message : String(err);

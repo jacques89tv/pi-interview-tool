@@ -475,7 +475,12 @@
       const btn = document.querySelector(
         `.attach-btn[data-question-id="${escapeSelector(questionId)}"]`
       );
-      if (btn) btn.classList.toggle("has-attachment", manager.hasContent(questionId));
+      const panel = document.querySelector(
+        `[data-attach-inline-for="${escapeSelector(questionId)}"]`
+      );
+      const hasContent = manager.hasContent(questionId);
+      if (btn) btn.classList.toggle("has-attachment", hasContent);
+      if (panel && hasContent) panel.classList.remove("hidden");
     },
   });
 
@@ -581,7 +586,7 @@
     });
   }
 
-  function highlightOption(card, optionIndex) {
+  function highlightOption(card, optionIndex, isKeyboard = true) {
     const options = getOptionsForCard(card);
     options.forEach((opt, i) => {
       const item = isOptionInput(opt) ? opt.closest('.option-item') : opt;
@@ -590,6 +595,9 @@
     const current = options[optionIndex];
     if (current) {
       current.focus();
+    }
+    if (isKeyboard) {
+      card.classList.add('keyboard-nav');
     }
   }
 
@@ -606,7 +614,7 @@
     
     const prevCard = nav.cards[nav.questionIndex];
     if (prevCard) {
-      prevCard.classList.remove('active');
+      prevCard.classList.remove('active', 'keyboard-nav');
       clearOptionHighlight(prevCard);
     }
     
@@ -644,7 +652,7 @@
   function activateSubmitArea() {
     const prevCard = nav.cards[nav.questionIndex];
     if (prevCard) {
-      prevCard.classList.remove('active');
+      prevCard.classList.remove('active', 'keyboard-nav');
       clearOptionHighlight(prevCard);
     }
     nav.inSubmitArea = true;
@@ -812,12 +820,13 @@
         }
       });
       card.addEventListener('click', (e) => {
+        card.classList.remove('keyboard-nav');
         if (nav.questionIndex !== index) {
           if (e.target.closest('.option-item')) {
             nav.questionIndex = index;
             const prevCard = nav.cards.find(c => c.classList.contains('active'));
             if (prevCard && prevCard !== card) {
-              prevCard.classList.remove('active');
+              prevCard.classList.remove('active', 'keyboard-nav');
               clearOptionHighlight(prevCard);
             }
             card.classList.add('active');

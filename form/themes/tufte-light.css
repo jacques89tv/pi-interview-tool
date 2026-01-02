@@ -9,14 +9,15 @@
   --fg-dim: #7a7267;
   --accent: #7d6850;
   --accent-hover: #927b61;
-  --accent-bright: #a07f5d;
-  --accent-muted: rgba(125, 104, 80, 0.25);
-  --border: #cdc3b4;
+  --accent-muted: rgba(125, 104, 80, 0.15);
+  --border: #a09080;
   --border-muted: #d9cfc0;
+  --border-focus: #8a7a6a;
+  --border-active: #b0a090;
   --success: #7a8b5a;
   --warning: #b9833a;
   --error: #b05a5a;
-  --focus-ring: rgba(125, 104, 80, 0.25);
+  --focus-ring: rgba(125, 104, 80, 0.2);
 
   --font-body: "Cormorant Garamond", Cormorant, "Crimson Pro", "Libre Baskerville", Georgia, serif;
   --font-ui: "Cormorant Garamond", Cormorant, "Crimson Pro", "Libre Baskerville", Georgia, serif;
