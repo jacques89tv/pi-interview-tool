@@ -77,6 +77,20 @@
       <span class="countdown-value"></span>
     </div>
 
+    <div id="queue-toast" class="queue-toast hidden" role="status" aria-live="polite">
+      <div class="queue-toast-header">
+        <span>Another interview started</span>
+        <button type="button" class="queue-toast-close" aria-label="Dismiss">×</button>
+      </div>
+      <div class="queue-toast-body">
+        <label class="queue-toast-label" for="queue-session-select">Switch to:</label>
+        <div class="queue-toast-controls">
+          <select id="queue-session-select" class="queue-toast-select"></select>
+          <button type="button" id="queue-open-btn" class="btn-secondary">Open</button>
+        </div>
+      </div>
+    </div>
+
     <div id="expired-overlay" class="expired-overlay hidden" aria-live="polite">
       <div class="expired-content">
         <div class="expired-icon">!</div>

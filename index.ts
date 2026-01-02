@@ -5,8 +5,19 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { randomUUID } from "node:crypto";
-import { startInterviewServer, type ResponseItem } from "./server.js";
+import { execSync } from "node:child_process";
+import { startInterviewServer, getActiveSessions, type ResponseItem } from "./server.js";
 import { validateQuestions, type QuestionsFile } from "./schema.js";
+
+function formatTimeAgo(timestamp: number): string {
+	const seconds = Math.floor((Date.now() - timestamp) / 1000);
+	if (seconds < 0) return "just now";
+	if (seconds < 60) return `${seconds} seconds ago`;
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
+	const hours = Math.floor(minutes / 60);
+	return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
+}
 
 async function openUrl(pi: CustomToolAPI, url: string, browser?: string): Promise<void> {
 	const platform = os.platform();
@@ -36,9 +47,10 @@ async function openUrl(pi: CustomToolAPI, url: string, browser?: string): Promis
 }
 
 interface InterviewDetails {
-	status: "completed" | "cancelled" | "timeout" | "aborted";
+	status: "completed" | "cancelled" | "timeout" | "aborted" | "queued";
 	responses: ResponseItem[];
 	url: string;
+	queuedMessage?: string;
 }
 
 interface InterviewSettings {
@@ -157,7 +169,7 @@ const factory: CustomToolFactory = (pi) => {
 			"Present an interactive form to gather user responses to questions. Image responses and attachments are returned as file paths - use the read tool directly to display them (no need to verify with file command first).",
 		parameters: InterviewParams,
 
-		async execute(_toolCallId, params, _onUpdate, ctx, signal) {
+		async execute(_toolCallId, params, onUpdate, ctx, signal) {
 			const { questions, timeout, verbose, theme } = params as {
 				questions: string;
 				timeout?: number;
@@ -194,15 +206,10 @@ const factory: CustomToolFactory = (pi) => {
 			const sessionId = randomUUID();
 			const sessionToken = randomUUID();
 			let server: { close: () => void } | null = null;
-			let timeoutId: NodeJS.Timeout | null = null;
 			let resolved = false;
 			let url = "";
 
 			const cleanup = () => {
-				if (timeoutId) {
-					clearTimeout(timeoutId);
-					timeoutId = null;
-				}
 				if (server) {
 					server.close();
 					server = null;
@@ -210,7 +217,11 @@ const factory: CustomToolFactory = (pi) => {
 			};
 
 			return new Promise((resolve, reject) => {
-				const finish = (status: InterviewDetails["status"], responses: ResponseItem[] = []) => {
+				const finish = (
+					status: InterviewDetails["status"],
+					responses: ResponseItem[] = [],
+					cancelReason?: "timeout" | "user" | "stale"
+				) => {
 					if (resolved) return;
 					resolved = true;
 					cleanup();
@@ -219,9 +230,14 @@ const factory: CustomToolFactory = (pi) => {
 					if (status === "completed") {
 						text = `User completed the interview form.\n\nResponses:\n${formatResponses(responses)}`;
 					} else if (status === "cancelled") {
-						text = "User cancelled the interview form.";
+						if (cancelReason === "stale") {
+							text =
+								"Interview session ended due to lost heartbeat.\n\nQuestions saved to: ~/.pi/interview-recovery/";
+						} else {
+							text = "User cancelled the interview form.";
+						}
 					} else if (status === "timeout") {
-						text = `Interview form timed out after ${timeoutSeconds} seconds.`;
+						text = `Interview form timed out after ${timeoutSeconds} seconds.\n\nQuestions saved to: ~/.pi/interview-recovery/`;
 					} else {
 						text = "Interview was aborted.";
 					}
@@ -247,25 +263,70 @@ const factory: CustomToolFactory = (pi) => {
 					},
 					{
 						onSubmit: (responses) => finish("completed", responses),
-						onCancel: () => finish("cancelled"),
+						onCancel: (reason) =>
+							reason === "timeout" ? finish("timeout") : finish("cancelled", [], reason),
 					}
 				)
 					.then(async (handle) => {
 						server = handle;
 						url = handle.url;
 
-						try {
-							await openUrl(pi, url, settings.browser);
-						} catch (err) {
-							cleanup();
-							const message = err instanceof Error ? err.message : String(err);
-							reject(new Error(`Failed to open browser: ${message}`));
-							return;
-						}
+						const activeSessions = getActiveSessions();
+						const otherActive = activeSessions.filter((s) => s.id !== sessionId);
 
-						if (timeoutSeconds > 0) {
-							const timeoutMs = timeoutSeconds * 1000;
-							timeoutId = setTimeout(() => finish("timeout"), timeoutMs);
+						if (otherActive.length > 0) {
+							const active = otherActive[0];
+							const queuedLines = [
+								"Interview already active in browser:",
+								`  Title: ${active.title}`,
+								`  Project: ${active.cwd}${active.gitBranch ? ` (${active.gitBranch})` : ""}`,
+								`  Session: ${active.id.slice(0, 8)}`,
+								`  Started: ${formatTimeAgo(active.startedAt)}`,
+								"",
+								"New interview ready:",
+								`  Title: ${questionsData.title || "Interview"}`,
+							];
+							const normalizedCwd = pi.cwd.startsWith(os.homedir())
+								? "~" + pi.cwd.slice(os.homedir().length)
+								: pi.cwd;
+							const gitBranch = (() => {
+								try {
+									return execSync("git rev-parse --abbrev-ref HEAD", {
+										cwd: pi.cwd,
+										encoding: "utf8",
+										timeout: 2000,
+										stdio: ["pipe", "pipe", "pipe"],
+									}).trim() || null;
+								} catch {
+									return null;
+								}
+							})();
+							queuedLines.push(`  Project: ${normalizedCwd}${gitBranch ? ` (${gitBranch})` : ""}`);
+							queuedLines.push(`  Session: ${sessionId.slice(0, 8)}`);
+							queuedLines.push("");
+							queuedLines.push(`Open when ready: ${url}`);
+							queuedLines.push("");
+							queuedLines.push("Server waiting until you open the link.");
+							const queuedMessage = queuedLines.join("\n");
+							const queuedSummary = "Interview queued; see tool panel for link.";
+							if (onUpdate) {
+								onUpdate({
+									content: [{ type: "text", text: queuedSummary }],
+									details: { status: "queued", url, responses: [], queuedMessage },
+								});
+							} else if (pi.hasUI) {
+								pi.ui.notify(queuedSummary, "info");
+							}
+						} else {
+							try {
+								await openUrl(pi, url, settings.browser);
+							} catch (err) {
+								cleanup();
+								const message = err instanceof Error ? err.message : String(err);
+								reject(new Error(`Failed to open browser: ${message}`));
+								return;
+							}
+
 						}
 					})
 					.catch((err) => {
@@ -285,6 +346,12 @@ const factory: CustomToolFactory = (pi) => {
 			const details = result.details as InterviewDetails | undefined;
 			if (!details) return new Text("Interview", 0, 0);
 
+			if (details.status === "queued" && details.queuedMessage) {
+				const header = theme.fg("warning", "QUEUED");
+				const body = theme.fg("dim", details.queuedMessage);
+				return new Text(`${header}\n${body}`, 0, 0);
+			}
+
 			const statusColor =
 				details.status === "completed"
 					? "success"
@@ -292,7 +359,9 @@ const factory: CustomToolFactory = (pi) => {
 						? "warning"
 						: details.status === "timeout"
 							? "warning"
-							: "error";
+							: details.status === "queued"
+								? "warning"
+								: "error";
 
 			const line = `${details.status.toUpperCase()} (${details.responses.length} responses)`;
 			return new Text(theme.fg(statusColor, line), 0, 0);

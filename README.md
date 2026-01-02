@@ -24,10 +24,15 @@ The tool is automatically discovered on next pi session. No build step required.
 ## Features
 
 - **Question Types**: Single-select, multi-select, text input, and image upload
+- **"Other" Option**: Single/multi select questions support custom text input
 - **Per-Question Attachments**: Attach images to any question via button, paste, or drag & drop
 - **Keyboard Navigation**: Full keyboard support with arrow keys, Tab, Enter
 - **Auto-save**: Responses saved to localStorage, restored on reload
 - **Session Timeout**: Configurable timeout with countdown badge, refreshes on activity
+- **Multi-Agent Support**: Queue detection prevents focus stealing when multiple agents run interviews
+- **Queue Toast Switcher**: Active interviews show a top-right toast with a dropdown to open queued sessions
+- **Session Recovery**: Abandoned/timed-out interviews save questions for later retry
+- **Session Status Bar**: Shows project path, git branch, and session ID for identification
 - **Image Support**: Drag & drop anywhere on question, file picker, paste image or path
 - **Path Normalization**: Handles shell-escaped paths (`\ `) and macOS screenshot filenames (narrow no-break space before AM/PM)
 - **Themes**: Built-in default + optional light/dark + custom theme CSS
@@ -54,6 +59,8 @@ The tool is automatically discovered on next pi session. No build step required.
 4. Window closes automatically; agent receives responses (or `null` if cancelled)
 
 **Timeout behavior:** The countdown (visible in corner) resets on any activity - typing, clicking, or mouse movement. When it expires, an overlay appears giving the user a chance to continue. Progress is never lost thanks to localStorage auto-save.
+
+**Multi-agent behavior:** When multiple agents run interviews simultaneously, only the first auto-opens the browser. Subsequent interviews are queued and shown as a URL in the tool output, preventing focus stealing. Active interviews also surface a top-right toast with a dropdown to open queued sessions. A session status bar at the top of each form shows the project path, git branch, and session ID for easy identification.
 
 ## Usage
 
@@ -249,6 +256,21 @@ interview/
     ├── styles.css # Base styles (dark tokens)
     ├── themes/    # Theme overrides (light/dark)
     └── script.js  # Form logic, keyboard nav, image handling
+```
+
+## Session Recovery
+
+If an interview times out or is abandoned (tab closed, lost connection), the questions are automatically saved to `~/.pi/interview-recovery/` for later retry.
+
+**Recovery files:**
+- Location: `~/.pi/interview-recovery/`
+- Format: `{date}_{time}_{project}_{branch}_{sessionId}.json`
+- Example: `2026-01-02_093000_myproject_main_65bec3f4.json`
+- Auto-cleanup: Files older than 7 days are deleted
+
+**To retry an abandoned interview:**
+```javascript
+interview({ questions: "~/.pi/interview-recovery/2026-01-02_093000_myproject_main_65bec3f4.json" })
 ```
 
 ## Limits

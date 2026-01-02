@@ -1,8 +1,8 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { tmpdir, homedir } from "node:os";
-import { join, dirname } from "node:path";
-import { readFileSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
+import { readFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,153 @@ function normalizePath(path: string): string {
 	return path;
 }
 
+interface SessionEntry {
+	id: string;
+	url: string;
+	cwd: string;
+	gitBranch: string | null;
+	title: string;
+	startedAt: number;
+	lastSeen: number;
+}
+
+interface SessionsFile {
+	sessions: SessionEntry[];
+}
+
+const SESSIONS_FILE = join(homedir(), ".pi", "interview-sessions.json");
+const RECOVERY_DIR = join(homedir(), ".pi", "interview-recovery");
+const STALE_THRESHOLD_MS = 30000;
+const STALE_PRUNE_MS = 60000;
+const RECOVERY_MAX_AGE_DAYS = 7;
+const ABANDONED_GRACE_MS = 60000;
+const WATCHDOG_INTERVAL_MS = 5000;
+
+function ensurePiDir(): void {
+	const piDir = join(homedir(), ".pi");
+	if (!existsSync(piDir)) {
+		mkdirSync(piDir, { recursive: true });
+	}
+}
+
+function readSessions(): SessionsFile {
+	try {
+		if (!existsSync(SESSIONS_FILE)) {
+			return { sessions: [] };
+		}
+		const data = readFileSync(SESSIONS_FILE, "utf8");
+		const parsed = JSON.parse(data);
+		if (!parsed.sessions || !Array.isArray(parsed.sessions)) {
+			return { sessions: [] };
+		}
+		return parsed as SessionsFile;
+	} catch {
+		return { sessions: [] };
+	}
+}
+
+function listSessions(): SessionEntry[] {
+	const data = readSessions();
+	const pruned = pruneStale(data.sessions);
+	if (pruned.length !== data.sessions.length) {
+		writeSessions({ sessions: pruned });
+	}
+	return pruned;
+}
+
+function writeSessions(data: SessionsFile): void {
+	ensurePiDir();
+	const tempFile = SESSIONS_FILE + ".tmp";
+	writeFileSync(tempFile, JSON.stringify(data, null, 2));
+	renameSync(tempFile, SESSIONS_FILE);
+}
+
+function pruneStale(sessions: SessionEntry[]): SessionEntry[] {
+	const now = Date.now();
+	return sessions.filter((s) => now - s.lastSeen < STALE_PRUNE_MS);
+}
+
+function touchSession(entry: SessionEntry): void {
+	const data = readSessions();
+	data.sessions = pruneStale(data.sessions);
+	const existing = data.sessions.find((s) => s.id === entry.id);
+	if (existing) {
+		existing.lastSeen = Date.now();
+		existing.url = entry.url;
+		existing.cwd = entry.cwd;
+		existing.gitBranch = entry.gitBranch;
+		existing.title = entry.title;
+		existing.startedAt = entry.startedAt;
+	} else {
+		data.sessions.push({ ...entry, lastSeen: Date.now() });
+	}
+	writeSessions(data);
+}
+
+function registerSession(entry: SessionEntry): void {
+	touchSession(entry);
+}
+
+function unregisterSession(sessionId: string): void {
+	const data = readSessions();
+	data.sessions = data.sessions.filter((s) => s.id !== sessionId);
+	writeSessions(data);
+}
+
+export function getActiveSessions(): SessionEntry[] {
+	const pruned = listSessions();
+	const now = Date.now();
+	return pruned.filter((s) => now - s.lastSeen < STALE_THRESHOLD_MS);
+}
+
+function ensureRecoveryDir(): void {
+	if (!existsSync(RECOVERY_DIR)) {
+		mkdirSync(RECOVERY_DIR, { recursive: true });
+	}
+}
+
+function cleanupOldRecoveryFiles(): void {
+	if (!existsSync(RECOVERY_DIR)) return;
+	const now = Date.now();
+	const maxAge = RECOVERY_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+	try {
+		const files = readdirSync(RECOVERY_DIR);
+		for (const file of files) {
+			const filePath = join(RECOVERY_DIR, file);
+			const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})_/);
+			if (dateMatch) {
+				const fileDate = new Date(dateMatch[1]).getTime();
+				if (now - fileDate > maxAge) {
+					unlinkSync(filePath);
+				}
+			}
+		}
+	} catch {}
+}
+
+function sanitizeForFilename(str: string): string {
+	return str.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 50);
+}
+
+function saveToRecovery(
+	questions: QuestionsFile,
+	cwd: string,
+	gitBranch: string | null,
+	sessionId: string
+): string {
+	ensureRecoveryDir();
+	const now = new Date();
+	const date = now.toISOString().slice(0, 10);
+	const time = now.toTimeString().slice(0, 8).replace(/:/g, "");
+	const project = sanitizeForFilename(basename(cwd) || "unknown");
+	const branch = sanitizeForFilename(gitBranch || "nogit");
+	const shortId = sessionId.slice(0, 8);
+	const filename = `${date}_${time}_${project}_${branch}_${shortId}.json`;
+	const filePath = join(RECOVERY_DIR, filename);
+	writeFileSync(filePath, JSON.stringify(questions, null, 2));
+	return filePath;
+}
+
 export interface ResponseItem {
 	id: string;
 	value: string | string[];
@@ -48,7 +195,7 @@ export interface InterviewServerOptions {
 
 export interface InterviewServerCallbacks {
 	onSubmit: (responses: ResponseItem[]) => void;
-	onCancel: () => void;
+	onCancel: (reason?: "timeout" | "user" | "stale") => void;
 }
 
 export interface InterviewServerHandle {
@@ -264,6 +411,38 @@ export async function startInterviewServer(
 		: builtinTheme.dark;
 	const themeMode = normalizeThemeMode(themeConfig.mode) ?? "dark";
 
+	const normalizedCwd = normalizePath(cwd);
+	const gitBranch = getGitBranch(cwd);
+	let sessionEntry: SessionEntry | null = null;
+	let browserConnected = false;
+	let lastHeartbeatAt = Date.now();
+	let watchdog: NodeJS.Timeout | null = null;
+	let completed = false;
+
+	const stopWatchdog = () => {
+		if (watchdog) {
+			clearInterval(watchdog);
+			watchdog = null;
+		}
+	};
+
+	const markCompleted = () => {
+		if (completed) return false;
+		completed = true;
+		stopWatchdog();
+		return true;
+	};
+
+	const touchHeartbeat = () => {
+		lastHeartbeatAt = Date.now();
+		if (!browserConnected) {
+			browserConnected = true;
+		}
+		if (sessionEntry) {
+			touchSession(sessionEntry);
+		}
+	};
+
 	const server = http.createServer(async (req, res) => {
 		try {
 			const method = req.method || "GET";
@@ -272,14 +451,14 @@ export async function startInterviewServer(
 
 			if (method === "GET" && url.pathname === "/") {
 				if (!validateTokenQuery(url, sessionToken, res)) return;
-				const gitBranch = getGitBranch(cwd);
+				touchHeartbeat();
 				const inlineData = safeInlineJSON({
 					questions: questions.questions,
 					title: questions.title,
 					description: questions.description,
 					sessionToken,
 					sessionId,
-					cwd: normalizePath(cwd),
+					cwd: normalizedCwd,
 					gitBranch,
 					startedAt: Date.now(),
 					timeout,
@@ -302,6 +481,16 @@ export async function startInterviewServer(
 			if (method === "GET" && url.pathname === "/health") {
 				if (!validateTokenQuery(url, sessionToken, res)) return;
 				sendJson(res, 200, { ok: true });
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/sessions") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+				const sessions = listSessions().map((session) => ({
+					...session,
+					status: Date.now() - session.lastSeen < STALE_THRESHOLD_MS ? "active" : "waiting",
+				}));
+				sendJson(res, 200, { ok: true, sessions });
 				return;
 			}
 
@@ -345,6 +534,18 @@ export async function startInterviewServer(
 				return;
 			}
 
+			if (method === "POST" && url.pathname === "/heartbeat") {
+				const body = await parseJSONBody(req).catch(() => null);
+				if (!body) {
+					sendJson(res, 400, { ok: false, error: "Invalid body" });
+					return;
+				}
+				if (!validateTokenBody(body, sessionToken, res)) return;
+				touchHeartbeat();
+				sendJson(res, 200, { ok: true });
+				return;
+			}
+
 			if (method === "POST" && url.pathname === "/cancel") {
 				const body = await parseJSONBody(req).catch((err) => {
 					if (err instanceof BodyTooLargeError) {
@@ -356,8 +557,20 @@ export async function startInterviewServer(
 				});
 				if (!body) return;
 				if (!validateTokenBody(body, sessionToken, res)) return;
+				if (completed) {
+					sendJson(res, 200, { ok: true });
+					return;
+				}
+				const reason = (body as { reason?: string }).reason;
+				if (reason === "timeout" || reason === "stale") {
+					const recoveryPath = saveToRecovery(questions, cwd, gitBranch, sessionId);
+					const label = reason === "timeout" ? "timed out" : "stale";
+					log(verbose, `Interview ${label}. Saved to: ${recoveryPath}`);
+				}
+				markCompleted();
+				unregisterSession(sessionId);
 				sendJson(res, 200, { ok: true });
-				setImmediate(() => callbacks.onCancel());
+				setImmediate(() => callbacks.onCancel(reason));
 				return;
 			}
 
@@ -372,6 +585,10 @@ export async function startInterviewServer(
 				});
 				if (!body) return;
 				if (!validateTokenBody(body, sessionToken, res)) return;
+				if (completed) {
+					sendJson(res, 409, { ok: false, error: "Session closed" });
+					return;
+				}
 
 				const payload = body as {
 					responses?: Array<{ id: string; value: string | string[]; attachments?: string[] }>;
@@ -479,6 +696,8 @@ export async function startInterviewServer(
 					}
 				}
 
+				markCompleted();
+				unregisterSession(sessionId);
 				sendJson(res, 200, { ok: true });
 				setImmediate(() => callbacks.onSubmit(responses));
 				return;
@@ -505,11 +724,36 @@ export async function startInterviewServer(
 				return;
 			}
 			const url = `http://localhost:${addr.port}/?session=${sessionToken}`;
+			cleanupOldRecoveryFiles();
+			const now = Date.now();
+			sessionEntry = {
+				id: sessionId,
+				url,
+				cwd: normalizedCwd,
+				gitBranch,
+				title: questions.title || "Interview",
+				startedAt: now,
+				lastSeen: now,
+			};
+			registerSession(sessionEntry);
+			if (!watchdog) {
+				watchdog = setInterval(() => {
+					if (completed || !browserConnected) return;
+					if (Date.now() - lastHeartbeatAt <= ABANDONED_GRACE_MS) return;
+					if (!markCompleted()) return;
+					const recoveryPath = saveToRecovery(questions, cwd, gitBranch, sessionId);
+					log(verbose, `Interview stale. Saved to: ${recoveryPath}`);
+					unregisterSession(sessionId);
+					setImmediate(() => callbacks.onCancel("stale"));
+				}, WATCHDOG_INTERVAL_MS);
+			}
 			resolve({
 				server,
 				url,
 				close: () => {
 					try {
+						markCompleted();
+						unregisterSession(sessionId);
 						server.close();
 					} catch {}
 				},

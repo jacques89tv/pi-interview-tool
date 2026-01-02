@@ -3,6 +3,15 @@
 ## 2026-01-02
 
 ### Added
+- **Multi-agent queue detection**: When another interview is active, new interviews print URL instead of auto-opening browser, preventing focus stealing
+- **Session heartbeat system**: Browser sends heartbeat every 5s; server tracks active sessions
+- **Abandoned interview recovery**: Questions saved to `~/.pi/interview-recovery/` on timeout or stale detection
+- **Server watchdog**: Detects lost heartbeats (60s grace) and saves recovery before closing
+- **Tab close detection**: Best-effort cancel via `pagehide` + `sendBeacon` API
+- **Reload protection**: Cmd+R / F5 detected to prevent false cancel on refresh
+- **Queued interview toast**: Active interviews show a top-right toast with a dropdown to open queued sessions
+- **Queued tool panel output**: Queued interview details render in the tool result panel with a single-line transcript summary
+- **Sessions endpoint**: `GET /sessions` returns active/waiting sessions for in-form queue UI
 - "Other..." text input option for single/multi select questions
   - Keyboard selection (Enter/Space) auto-focuses the text input
   - Value restoration from localStorage
@@ -12,14 +21,21 @@
   - Short session ID for identification
 - Dynamic document title: `projectName (branch) | sessionId` for tab identification
 - `--bg-active-tint` CSS variable for theme-aware active question styling
+- Recovery file auto-cleanup (files older than 7 days)
 
 ### Changed
 - Active question focus styling uses gradient background tint instead of border-only
 - Path normalization moved server-side using `os.homedir()` for cross-platform support
+- Session registration uses upsert pattern (handles re-registration after prune)
+- Cancel endpoint accepts `reason` field: "timeout", "user", or "stale"
 
 ### Fixed
 - "Other" option keyboard selection now focuses text input instead of advancing to next question
 - Light mode active question gradient visibility (increased tint opacity)
+- Server-side timeout only starts when browser auto-opens (not for queued interviews)
+- `formatTimeAgo` handles negative timestamps (clock skew)
+- Race conditions prevented via `completed` flag on server
+- Duplicate cancel requests prevented via `cancelSent` flag on client
 
 ---
 

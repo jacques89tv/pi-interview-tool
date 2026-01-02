@@ -23,6 +23,11 @@
   const countdownRingProgress = countdownBadge?.querySelector(".countdown-ring-progress");
   const closeCountdown = document.getElementById("close-countdown");
   const stayBtn = document.getElementById("stay-btn");
+  const queueToast = document.getElementById("queue-toast");
+  const queueToastTitle = queueToast?.querySelector(".queue-toast-header span");
+  const queueToastClose = queueToast?.querySelector(".queue-toast-close");
+  const queueSessionSelect = document.getElementById("queue-session-select");
+  const queueOpenBtn = document.getElementById("queue-open-btn");
 
   const MAX_SIZE = 5 * 1024 * 1024;
   const MAX_DIMENSION = 4096;
@@ -44,15 +49,25 @@
     expired: false,
     countdownEndTime: 0,
     tickLoopRunning: false,
+    ended: false,
+    cancelSent: false,
+    reloadIntent: false,
   };
   const timers = {
     save: null,
     countdown: null,
     expiration: null,
+    heartbeat: null,
+    queuePoll: null,
   };
   let filePickerOpen = false;
   const CLOSE_DELAY = 10;
   const RING_CIRCUMFERENCE = 100.53;
+  const RELOAD_INTENT_KEY = "pi-interview-reload-intent";
+  const queueState = {
+    dismissed: false,
+    knownIds: new Set(),
+  };
 
   function updateCountdownBadge(secondsLeft, totalSeconds) {
     if (!countdownBadge || !countdownValue || !countdownRingProgress) return;
@@ -147,9 +162,182 @@
       
       if (closeIn <= 0) {
         clearInterval(timers.countdown);
-        window.close();
+        cancelInterview("timeout").finally(() => window.close());
       }
     }, 1000);
+  }
+
+  function startHeartbeat() {
+    if (timers.heartbeat) return;
+    timers.heartbeat = setInterval(() => {
+      fetch("/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: sessionToken }),
+      }).catch(() => {});
+    }, 5000);
+  }
+
+  function stopHeartbeat() {
+    if (timers.heartbeat) {
+      clearInterval(timers.heartbeat);
+      timers.heartbeat = null;
+    }
+  }
+
+  function stopQueuePolling() {
+    if (timers.queuePoll) {
+      clearInterval(timers.queuePoll);
+      timers.queuePoll = null;
+    }
+  }
+
+  function formatRelativeTime(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 0) return "just now";
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ago`;
+  }
+
+  function formatSessionLabel(session) {
+    const status = session.status === "active" ? "Active" : "Waiting";
+    const branch = session.gitBranch ? ` (${session.gitBranch})` : "";
+    const project = session.cwd ? session.cwd + branch : "Unknown";
+    const title = session.title || "Interview";
+    const timeAgo = formatRelativeTime(session.startedAt);
+    return `${status}: ${title} — ${project} · ${timeAgo}`;
+  }
+
+  function updateQueueToast(sessions) {
+    if (!queueToast || !queueSessionSelect || !queueOpenBtn) return;
+    const others = sessions.filter((s) => s.id !== sessionId);
+    if (others.length === 0) {
+      queueToast.classList.add("hidden");
+      queueState.dismissed = false;
+      queueState.knownIds.clear();
+      return;
+    }
+
+    const newIds = others.filter((s) => !queueState.knownIds.has(s.id));
+    others.forEach((s) => queueState.knownIds.add(s.id));
+    if (newIds.length > 0) {
+      queueState.dismissed = false;
+    }
+
+    if (queueState.dismissed) return;
+
+    const currentSession = sessions.find((s) => s.id === sessionId);
+    const sortedOthers = others.slice().sort((a, b) => b.startedAt - a.startedAt);
+    const sorted = currentSession ? [currentSession, ...sortedOthers] : sortedOthers;
+    const currentValue = queueSessionSelect.value;
+    queueSessionSelect.innerHTML = "";
+    sorted.forEach((session) => {
+      const option = document.createElement("option");
+      option.value = session.url;
+      if (session.id === sessionId) {
+        option.textContent = `Active (this tab): ${formatSessionLabel(session)}`;
+        option.disabled = true;
+      } else {
+        option.textContent = formatSessionLabel(session);
+      }
+      queueSessionSelect.appendChild(option);
+    });
+    const selectedSession =
+      (currentValue && sorted.find((s) => s.url === currentValue && s.id !== sessionId)) ||
+      sorted.find((s) => s.id !== sessionId);
+    if (selectedSession) {
+      queueSessionSelect.value = selectedSession.url;
+    }
+
+    if (queueToastTitle) {
+      queueToastTitle.textContent =
+        others.length === 1 ? "Another interview started" : `${others.length} interviews waiting`;
+    }
+
+    const selectedOption = queueSessionSelect.options[queueSessionSelect.selectedIndex];
+    queueOpenBtn.disabled = !queueSessionSelect.value || selectedOption?.disabled;
+    queueToast.classList.remove("hidden");
+  }
+
+  async function pollQueueSessions() {
+    try {
+      const response = await fetch(`/sessions?session=${encodeURIComponent(sessionToken)}`, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data || !data.ok || !Array.isArray(data.sessions)) return;
+      updateQueueToast(data.sessions);
+    } catch (_err) {}
+  }
+
+  function startQueuePolling() {
+    if (!queueToast || timers.queuePoll) return;
+    pollQueueSessions();
+    timers.queuePoll = setInterval(pollQueueSessions, 6000);
+  }
+
+  function markReloadIntent() {
+    session.reloadIntent = true;
+    try {
+      sessionStorage.setItem(RELOAD_INTENT_KEY, "1");
+      setTimeout(() => {
+        sessionStorage.removeItem(RELOAD_INTENT_KEY);
+      }, 2000);
+    } catch (_err) {}
+  }
+
+  function clearReloadIntent() {
+    session.reloadIntent = false;
+    try {
+      sessionStorage.removeItem(RELOAD_INTENT_KEY);
+    } catch (_err) {}
+  }
+
+  function hasReloadIntent() {
+    if (session.reloadIntent) return true;
+    try {
+      return sessionStorage.getItem(RELOAD_INTENT_KEY) === "1";
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function sendCancelBeacon(reason) {
+    if (session.cancelSent || session.ended) return;
+    session.cancelSent = true;
+    const payload = JSON.stringify({ token: sessionToken, reason });
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: "application/json" });
+      navigator.sendBeacon("/cancel", blob);
+      return;
+    }
+    fetch("/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {});
+  }
+
+  async function cancelInterview(reason) {
+    if (session.ended) return;
+    session.ended = true;
+    session.cancelSent = true;
+    stopHeartbeat();
+    stopQueuePolling();
+    try {
+      await fetch("/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: sessionToken, reason }),
+      });
+    } catch (_err) {}
   }
 
   function isNetworkError(err) {
@@ -680,11 +868,7 @@
     if (event.key === 'Escape') {
       if (!expiredOverlay.classList.contains('hidden')) {
         if (timers.countdown) clearInterval(timers.countdown);
-        fetch("/cancel", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: sessionToken }),
-        }).catch(() => {}).finally(() => window.close());
+        cancelInterview("user").finally(() => window.close());
         return;
       }
       showSessionExpired();
@@ -1654,6 +1838,9 @@
       }
 
       clearProgress();
+      stopHeartbeat();
+      stopQueuePolling();
+      session.ended = true;
       successOverlay.classList.remove("hidden");
       setTimeout(() => {
         window.close();
@@ -1670,6 +1857,7 @@
 
   function init() {
     initTheme();
+    clearReloadIntent();
 
     const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
     const modKey = document.querySelector(".mod-key");
@@ -1699,8 +1887,49 @@
     });
 
     initStorage();
+    startHeartbeat();
+    startQueuePolling();
 
     formEl.addEventListener("submit", submitForm);
+    if (queueToastClose) {
+      queueToastClose.addEventListener("click", () => {
+        queueState.dismissed = true;
+        queueToast?.classList.add("hidden");
+      });
+    }
+
+    if (queueSessionSelect && queueOpenBtn) {
+      queueSessionSelect.addEventListener("change", () => {
+        const selectedOption = queueSessionSelect.options[queueSessionSelect.selectedIndex];
+        queueOpenBtn.disabled = !queueSessionSelect.value || selectedOption?.disabled;
+      });
+      queueOpenBtn.addEventListener("click", () => {
+        const url = queueSessionSelect.value;
+        if (!url) return;
+        const selectedOption = queueSessionSelect.options[queueSessionSelect.selectedIndex];
+        if (selectedOption?.disabled) return;
+        window.open(url, "_blank", "noopener");
+      });
+    }
+    window.addEventListener("pagehide", (event) => {
+      if (session.ended) return;
+      if (event.persisted) return;
+      if (hasReloadIntent()) return;
+      sendCancelBeacon("user");
+    });
+
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        const key = event.key.toLowerCase();
+        if ((event.metaKey || event.ctrlKey) && key === "r") {
+          markReloadIntent();
+        } else if (event.key === "F5") {
+          markReloadIntent();
+        }
+      },
+      true
+    );
     submitBtn.addEventListener("keydown", (e) => {
       if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -1711,13 +1940,7 @@
     
     closeTabBtn.addEventListener("click", async () => {
       if (timers.countdown) clearInterval(timers.countdown);
-      try {
-        await fetch("/cancel", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: sessionToken }),
-        });
-      } catch (_err) {}
+      await cancelInterview("user");
       window.close();
     });
 
