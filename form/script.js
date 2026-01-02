@@ -29,14 +29,24 @@
   const imagePathState = new Map();
   const attachState = new Map();
   const attachPathState = new Map();
-  let storageKey = null;
-  let saveTimer = null;
-  let sessionExpired = false;
-  let countdownInterval = null;
+  const nav = {
+    questionIndex: 0,
+    optionIndex: 0,
+    inSubmitArea: false,
+    cards: [],
+  };
+  const session = {
+    storageKey: null,
+    expired: false,
+    countdownEndTime: 0,
+    tickLoopRunning: false,
+  };
+  const timers = {
+    save: null,
+    countdown: null,
+    expiration: null,
+  };
   let filePickerOpen = false;
-  let countdownEndTime = 0;
-  let expirationTimeout = null;
-  let tickLoopRunning = false;
   const CLOSE_DELAY = 10;
   const RING_CIRCUMFERENCE = 100.53;
 
@@ -62,17 +72,17 @@
     
     const expandThreshold = 120;
     const urgentThreshold = 30;
-    countdownEndTime = Date.now() + (timeout * 1000);
+    session.countdownEndTime = Date.now() + (timeout * 1000);
     
     countdownBadge.classList.remove("hidden");
     countdownBadge.classList.add("minimal");
     
-    if (tickLoopRunning) return;
-    tickLoopRunning = true;
+    if (session.tickLoopRunning) return;
+    session.tickLoopRunning = true;
     
     const tick = () => {
       const now = Date.now();
-      const remaining = Math.max(0, Math.ceil((countdownEndTime - now) / 1000));
+      const remaining = Math.max(0, Math.ceil((session.countdownEndTime - now) / 1000));
       
       updateCountdownBadge(remaining, timeout);
       
@@ -86,10 +96,10 @@
         countdownBadge.classList.remove("urgent");
       }
       
-      if (remaining > 0 && !sessionExpired) {
+      if (remaining > 0 && !session.expired) {
         requestAnimationFrame(tick);
       } else {
-        tickLoopRunning = false;
+        session.tickLoopRunning = false;
       }
     };
     
@@ -97,23 +107,23 @@
   }
 
   function refreshCountdown() {
-    if (sessionExpired || timeout <= 0) return;
-    countdownEndTime = Date.now() + (timeout * 1000);
+    if (session.expired || timeout <= 0) return;
+    session.countdownEndTime = Date.now() + (timeout * 1000);
     countdownBadge?.classList.add("minimal");
     countdownBadge?.classList.remove("urgent");
     
-    if (expirationTimeout) {
-      clearTimeout(expirationTimeout);
+    if (timers.expiration) {
+      clearTimeout(timers.expiration);
     }
-    expirationTimeout = setTimeout(() => {
+    timers.expiration = setTimeout(() => {
       showSessionExpired();
     }, timeout * 1000);
   }
 
   function showSessionExpired() {
-    if (sessionExpired) return;
-    sessionExpired = true;
-    tickLoopRunning = false;
+    if (session.expired) return;
+    session.expired = true;
+    session.tickLoopRunning = false;
     
     submitBtn.disabled = true;
     countdownBadge?.classList.add("hidden");
@@ -127,12 +137,12 @@
     let closeIn = CLOSE_DELAY;
     if (closeCountdown) closeCountdown.textContent = closeIn;
     
-    countdownInterval = setInterval(() => {
+    timers.countdown = setInterval(() => {
       closeIn--;
       if (closeCountdown) closeCountdown.textContent = closeIn;
       
       if (closeIn <= 0) {
-        clearInterval(countdownInterval);
+        clearInterval(timers.countdown);
         window.close();
       }
     }, 1000);
@@ -157,97 +167,323 @@
     el.textContent = text || "";
   }
 
-  function debounceSave() {
-    if (saveTimer) {
-      window.clearTimeout(saveTimer);
+  const themeConfig = data.theme || {};
+  const themeMode = themeConfig.mode || "dark";
+  const themeToggleHotkey =
+    typeof themeConfig.toggleHotkey === "string" ? themeConfig.toggleHotkey : "";
+  const themeLinkLight = document.querySelector('link[data-theme-link="light"]');
+  const themeLinkDark = document.querySelector('link[data-theme-link="dark"]');
+  const THEME_OVERRIDE_KEY = "pi-interview-theme-override";
+
+  function getSystemTheme() {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function getStoredThemeOverride() {
+    const value = localStorage.getItem(THEME_OVERRIDE_KEY);
+    return value === "light" || value === "dark" ? value : null;
+  }
+
+  function setStoredThemeOverride(value) {
+    if (!value) {
+      localStorage.removeItem(THEME_OVERRIDE_KEY);
+      return;
     }
-    saveTimer = window.setTimeout(() => {
+    localStorage.setItem(THEME_OVERRIDE_KEY, value);
+  }
+
+  function setThemeLinkEnabled(link, enabled) {
+    if (!link) return;
+    link.disabled = !enabled;
+    link.media = enabled ? "all" : "not all";
+  }
+
+  function applyTheme(mode) {
+    document.documentElement.dataset.theme = mode;
+    setThemeLinkEnabled(themeLinkLight, mode === "light");
+    setThemeLinkEnabled(themeLinkDark, mode === "dark");
+  }
+
+  function getEffectiveThemeMode() {
+    const override = getStoredThemeOverride();
+    if (override) return override;
+    if (themeMode === "auto") return getSystemTheme();
+    return themeMode;
+  }
+
+  function parseHotkey(value) {
+    if (!value) return null;
+    const parts = value.toLowerCase().split("+").map(part => part.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+    const key = parts[parts.length - 1];
+    const mods = parts.slice(0, -1);
+    const hotkey = { key, mod: false, shift: false, alt: false };
+
+    mods.forEach((mod) => {
+      if (mod === "mod" || mod === "cmd" || mod === "meta" || mod === "ctrl" || mod === "control") {
+        hotkey.mod = true;
+      } else if (mod === "shift") {
+        hotkey.shift = true;
+      } else if (mod === "alt" || mod === "option") {
+        hotkey.alt = true;
+      }
+    });
+
+    return key ? hotkey : null;
+  }
+
+  function updateThemeShortcutDisplay(hotkey) {
+    const shortcut = document.querySelector("[data-theme-shortcut]");
+    if (!shortcut) return;
+    if (!hotkey) {
+      shortcut.classList.add("hidden");
+      return;
+    }
+
+    const keysEl = shortcut.querySelector("[data-theme-keys]");
+    if (!keysEl) return;
+    keysEl.innerHTML = "";
+
+    const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+    const parts = [];
+    if (hotkey.mod) parts.push(isMac ? "⌘" : "Ctrl");
+    if (hotkey.shift) parts.push("Shift");
+    if (hotkey.alt) parts.push(isMac ? "Option" : "Alt");
+    parts.push(hotkey.key.length === 1 ? hotkey.key.toUpperCase() : hotkey.key.toUpperCase());
+
+    parts.forEach((part) => {
+      const kbd = document.createElement("kbd");
+      kbd.textContent = part;
+      keysEl.appendChild(kbd);
+    });
+
+    shortcut.classList.remove("hidden");
+  }
+
+  function matchesHotkey(event, hotkey) {
+    const key = event.key.toLowerCase();
+    if (key !== hotkey.key) return false;
+    const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+    const modPressed = isMac ? event.metaKey : event.ctrlKey;
+    if (hotkey.mod !== modPressed) return false;
+    if (hotkey.shift !== event.shiftKey) return false;
+    if (hotkey.alt !== event.altKey) return false;
+    if (!hotkey.mod && (event.metaKey || event.ctrlKey)) return false;
+    if (!hotkey.shift && event.shiftKey) return false;
+    if (!hotkey.alt && event.altKey) return false;
+    return true;
+  }
+
+  function toggleTheme() {
+    const current = getEffectiveThemeMode();
+    const next = current === "dark" ? "light" : "dark";
+    if (themeMode === "auto") {
+      const system = getSystemTheme();
+      if (next === system) {
+        setStoredThemeOverride(null);
+      } else {
+        setStoredThemeOverride(next);
+      }
+    } else {
+      setStoredThemeOverride(next);
+    }
+    applyTheme(next);
+  }
+
+  function initTheme() {
+    applyTheme(getEffectiveThemeMode());
+
+    if (themeMode === "auto") {
+      const media = window.matchMedia("(prefers-color-scheme: dark)");
+      media.addEventListener("change", () => {
+        if (!getStoredThemeOverride()) {
+          applyTheme(getSystemTheme());
+        }
+      });
+    }
+
+    const hotkey = parseHotkey(themeToggleHotkey);
+    updateThemeShortcutDisplay(hotkey);
+    if (hotkey) {
+      document.addEventListener("keydown", (event) => {
+        if (matchesHotkey(event, hotkey)) {
+          event.preventDefault();
+          toggleTheme();
+        }
+      });
+    }
+  }
+
+  function normalizePath(path) {
+    let normalized = path.replace(/\\ /g, " ");  // Shell escape: backslash-space to space
+    // macOS screenshots use narrow no-break space (\u202f) before AM/PM in "Screenshot YYYY-MM-DD at H.MM.SS AM/PM.png"
+    normalized = normalized.replace(/(\d{1,2}\.\d{2}\.\d{2}) (AM|PM)(\.\w+)?$/i, "$1\u202f$2$3");
+    return normalized;
+  }
+
+  function debounceSave() {
+    if (timers.save) {
+      window.clearTimeout(timers.save);
+    }
+    timers.save = window.setTimeout(() => {
       saveProgress();
     }, 500);
   }
+
+  function createImageManager(options) {
+    const {
+      fileState,
+      pathState,
+      containerSelector,
+      onUpdate,
+      onRenderComplete,
+      removeLabel = "×",
+    } = options;
+
+    const manager = {
+      render(questionId) {
+        const container = document.querySelector(containerSelector(questionId));
+        if (!container) return;
+        container.innerHTML = "";
+
+        const entry = fileState.get(questionId);
+        if (entry) {
+          const item = document.createElement("div");
+          item.className = "selected-item selected-image";
+
+          const img = document.createElement("img");
+          const url = URL.createObjectURL(entry.file);
+          img.src = url;
+          img.onload = () => URL.revokeObjectURL(url);
+
+          const name = document.createElement("span");
+          name.className = "selected-item-name";
+          name.textContent = entry.file.name;
+
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "selected-item-remove";
+          removeBtn.textContent = removeLabel;
+          removeBtn.addEventListener("click", () => {
+            fileState.delete(questionId);
+            manager.render(questionId);
+            onUpdate();
+          });
+
+          item.appendChild(img);
+          item.appendChild(name);
+          item.appendChild(removeBtn);
+          container.appendChild(item);
+        }
+
+        const paths = pathState.get(questionId) || [];
+        paths.forEach(path => {
+          const item = document.createElement("div");
+          item.className = "selected-item selected-path";
+
+          const pathText = document.createElement("span");
+          pathText.className = "selected-item-path";
+          pathText.textContent = path;
+
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "selected-item-remove";
+          removeBtn.textContent = removeLabel;
+          removeBtn.addEventListener("click", () => {
+            const arr = pathState.get(questionId) || [];
+            const idx = arr.indexOf(path);
+            if (idx > -1) arr.splice(idx, 1);
+            manager.render(questionId);
+            onUpdate();
+          });
+
+          item.appendChild(pathText);
+          item.appendChild(removeBtn);
+          container.appendChild(item);
+        });
+
+        if (onRenderComplete) onRenderComplete(questionId, manager);
+      },
+
+      addFile(questionId, file) {
+        fileState.set(questionId, { file });
+        manager.render(questionId);
+        onUpdate();
+      },
+
+      removeFile(questionId) {
+        fileState.delete(questionId);
+        manager.render(questionId);
+        onUpdate();
+      },
+
+      addPath(questionId, path) {
+        const paths = pathState.get(questionId) || [];
+        if (!paths.includes(path)) {
+          paths.push(path);
+          pathState.set(questionId, paths);
+          manager.render(questionId);
+          onUpdate();
+        }
+      },
+
+      removePath(questionId, path) {
+        const paths = pathState.get(questionId) || [];
+        const index = paths.indexOf(path);
+        if (index > -1) {
+          paths.splice(index, 1);
+          pathState.set(questionId, paths);
+          manager.render(questionId);
+          onUpdate();
+        }
+      },
+
+      getFile(questionId) {
+        return fileState.get(questionId);
+      },
+
+      getPaths(questionId) {
+        return pathState.get(questionId) || [];
+      },
+
+      hasContent(questionId) {
+        return fileState.has(questionId) || (pathState.get(questionId) || []).length > 0;
+      },
+
+      countFiles() {
+        return fileState.size;
+      },
+    };
+
+    return manager;
+  }
+
+  const questionImages = createImageManager({
+    fileState: imageState,
+    pathState: imagePathState,
+    containerSelector: (id) => `[data-selected-for="${escapeSelector(id)}"]`,
+    onUpdate: debounceSave,
+  });
+
+  const attachments = createImageManager({
+    fileState: attachState,
+    pathState: attachPathState,
+    containerSelector: (id) => `[data-attach-items-for="${escapeSelector(id)}"]`,
+    onUpdate: debounceSave,
+    removeLabel: "x",
+    onRenderComplete: (questionId, manager) => {
+      const btn = document.querySelector(
+        `.attach-btn[data-question-id="${escapeSelector(questionId)}"]`
+      );
+      if (btn) btn.classList.toggle("has-attachment", manager.hasContent(questionId));
+    },
+  });
 
   function updateDoneState(questionId) {
     const doneItem = document.querySelector(`[data-done-for="${escapeSelector(questionId)}"]`);
     if (!doneItem) return;
     const hasSelection = document.querySelectorAll(`input[name="${escapeSelector(questionId)}"]:checked`).length > 0;
     doneItem.classList.toggle("disabled", !hasSelection);
-  }
-
-  function addImagePath(questionId, path) {
-    const paths = imagePathState.get(questionId) || [];
-    if (!paths.includes(path)) {
-      paths.push(path);
-      imagePathState.set(questionId, paths);
-      renderSelectedItems(questionId);
-      debounceSave();
-    }
-  }
-
-  function removeImagePath(questionId, path) {
-    const paths = imagePathState.get(questionId) || [];
-    const index = paths.indexOf(path);
-    if (index > -1) {
-      paths.splice(index, 1);
-      imagePathState.set(questionId, paths);
-      renderSelectedItems(questionId);
-      debounceSave();
-    }
-  }
-
-  function renderSelectedItems(questionId) {
-    const container = document.querySelector(`[data-selected-for="${escapeSelector(questionId)}"]`);
-    if (!container) return;
-    container.innerHTML = "";
-    
-    const imageEntry = imageState.get(questionId);
-    if (imageEntry) {
-      const item = document.createElement("div");
-      item.className = "selected-item selected-image";
-      
-      const img = document.createElement("img");
-      const url = URL.createObjectURL(imageEntry.file);
-      img.src = url;
-      img.onload = () => URL.revokeObjectURL(url);
-      
-      const name = document.createElement("span");
-      name.className = "selected-item-name";
-      name.textContent = imageEntry.file.name;
-      
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "selected-item-remove";
-      removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => {
-        imageState.delete(questionId);
-        renderSelectedItems(questionId);
-        debounceSave();
-      });
-      
-      item.appendChild(img);
-      item.appendChild(name);
-      item.appendChild(removeBtn);
-      container.appendChild(item);
-    }
-    
-    const paths = imagePathState.get(questionId) || [];
-    paths.forEach(path => {
-      const item = document.createElement("div");
-      item.className = "selected-item selected-path";
-      
-      const pathText = document.createElement("span");
-      pathText.className = "selected-item-path";
-      pathText.textContent = path;
-      
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "selected-item-remove";
-      removeBtn.textContent = "×";
-      removeBtn.addEventListener("click", () => removeImagePath(questionId, path));
-      
-      item.appendChild(pathText);
-      item.appendChild(removeBtn);
-      container.appendChild(item);
-    });
   }
 
   function clearGlobalError() {
@@ -275,10 +511,6 @@
     });
   }
 
-  let currentQuestionIndex = 0;
-  let currentOptionIndex = 0;
-  let questionCards = [];
-  let inSubmitArea = false;
   const formFooter = document.querySelector('.form-footer');
 
   function getOptionsForCard(card) {
@@ -311,6 +543,44 @@
     return el && el.classList.contains('done-item');
   }
 
+  function setupDropzone(dropzone, fileInput) {
+    dropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add("dragover");
+    });
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.classList.remove("dragover");
+    });
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove("dragover");
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const dt = new DataTransfer();
+        dt.items.add(files[0]);
+        fileInput.files = dt.files;
+        fileInput.dispatchEvent(new Event("change"));
+      }
+    });
+  }
+
+  function setupEdgeNavigation(element) {
+    element.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" && element.selectionStart === element.value.length) {
+        e.preventDefault();
+        e.stopPropagation();
+        nextQuestion();
+      }
+      if (e.key === "ArrowLeft" && element.selectionStart === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        prevQuestion();
+      }
+    });
+  }
+
   function highlightOption(card, optionIndex) {
     const options = getOptionsForCard(card);
     options.forEach((opt, i) => {
@@ -330,18 +600,18 @@
   }
 
   function focusQuestion(index, fromDirection = 'next') {
-    if (index < 0 || index >= questionCards.length) return;
+    if (index < 0 || index >= nav.cards.length) return;
     
     deactivateSubmitArea();
     
-    const prevCard = questionCards[currentQuestionIndex];
+    const prevCard = nav.cards[nav.questionIndex];
     if (prevCard) {
       prevCard.classList.remove('active');
       clearOptionHighlight(prevCard);
     }
     
-    currentQuestionIndex = index;
-    const card = questionCards[index];
+    nav.questionIndex = index;
+    const card = nav.cards[index];
     card.classList.add('active');
     card.scrollIntoView({ behavior: 'auto', block: 'center' });
     
@@ -350,11 +620,11 @@
     const textarea = card.querySelector('textarea');
     
     if (dropzone) {
-      currentOptionIndex = 0;
-      highlightOption(card, currentOptionIndex);
+      nav.optionIndex = 0;
+      highlightOption(card, nav.optionIndex);
     } else if (options.length > 0) {
-      currentOptionIndex = fromDirection === 'prev' ? options.length - 1 : 0;
-      highlightOption(card, currentOptionIndex);
+      nav.optionIndex = fromDirection === 'prev' ? options.length - 1 : 0;
+      highlightOption(card, nav.optionIndex);
     } else if (textarea) {
       textarea.focus();
       if (fromDirection === 'prev') {
@@ -364,68 +634,40 @@
   }
 
   function nextQuestion() {
-    if (currentQuestionIndex < questionCards.length - 1) {
-      focusQuestion(currentQuestionIndex + 1, 'next');
+    if (nav.questionIndex < nav.cards.length - 1) {
+      focusQuestion(nav.questionIndex + 1, 'next');
     } else {
       activateSubmitArea();
     }
   }
 
   function activateSubmitArea() {
-    const prevCard = questionCards[currentQuestionIndex];
+    const prevCard = nav.cards[nav.questionIndex];
     if (prevCard) {
       prevCard.classList.remove('active');
       clearOptionHighlight(prevCard);
     }
-    inSubmitArea = true;
+    nav.inSubmitArea = true;
     formFooter?.classList.add('active');
     submitBtn.focus();
     formFooter?.scrollIntoView({ behavior: 'auto', block: 'center' });
   }
 
   function deactivateSubmitArea() {
-    inSubmitArea = false;
+    nav.inSubmitArea = false;
     formFooter?.classList.remove('active');
   }
 
   function prevQuestion() {
-    if (currentQuestionIndex > 0) {
-      focusQuestion(currentQuestionIndex - 1, 'prev');
+    if (nav.questionIndex > 0) {
+      focusQuestion(nav.questionIndex - 1, 'prev');
     }
   }
 
   function handleQuestionKeydown(event) {
-    if (inSubmitArea) return;
-    
-    const card = questionCards[currentQuestionIndex];
-    if (!card) return;
-    
-    const options = getOptionsForCard(card);
-    const textarea = card.querySelector('textarea');
-    const fileInput = card.querySelector('input[type="file"]');
-    const isTextFocused = document.activeElement === textarea;
-    
-    if (event.key === 'Tab') {
-      const inAttachArea = document.activeElement?.closest('.attach-inline');
-      if (inAttachArea) return;
-      
-      event.preventDefault();
-      const options = getOptionsForCard(card);
-      
-      if (options.length > 0) {
-        if (event.shiftKey) {
-          currentOptionIndex = (currentOptionIndex - 1 + options.length) % options.length;
-        } else {
-          currentOptionIndex = (currentOptionIndex + 1) % options.length;
-        }
-        highlightOption(card, currentOptionIndex);
-      }
-      return;
-    }
-    
     if (event.key === 'Escape') {
       if (!expiredOverlay.classList.contains('hidden')) {
-        if (countdownInterval) clearInterval(countdownInterval);
+        if (timers.countdown) clearInterval(timers.countdown);
         fetch("/cancel", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -443,26 +685,35 @@
       formEl.requestSubmit();
       return;
     }
+
+    if (nav.inSubmitArea) return;
     
-    if (event.key === 'a' && !isMeta && !event.shiftKey && !isTextFocused) {
+    const card = nav.cards[nav.questionIndex];
+    if (!card) return;
+    
+    const options = getOptionsForCard(card);
+    const textarea = card.querySelector('textarea');
+    const isTextFocused = document.activeElement === textarea;
+    
+    if (event.key === 'Tab') {
+      const inAttachArea = document.activeElement?.closest('.attach-inline');
+      if (inAttachArea) return;
+      
       event.preventDefault();
-      const attachBtn = card.querySelector('.attach-btn');
-      if (attachBtn) {
-        const attachInline = card.querySelector('.attach-inline');
-        const wasHidden = attachInline?.classList.contains('hidden');
-        attachBtn.click();
-        if (wasHidden && attachInline && !attachInline.classList.contains('hidden')) {
-          const attachDrop = attachInline.querySelector('.attach-inline-drop');
-          if (attachDrop) attachDrop.focus();
+      
+      if (options.length > 0) {
+        if (event.shiftKey) {
+          nav.optionIndex = (nav.optionIndex - 1 + options.length) % options.length;
         } else {
-          attachBtn.focus();
+          nav.optionIndex = (nav.optionIndex + 1) % options.length;
         }
+        highlightOption(card, nav.optionIndex);
       }
       return;
     }
     
     if (event.key === 'ArrowLeft') {
-      if (document.activeElement === textarea || isPathInput(document.activeElement)) {
+      if (isTextFocused || isPathInput(document.activeElement)) {
         return;
       }
       event.preventDefault();
@@ -471,7 +722,7 @@
     }
     
     if (event.key === 'ArrowRight') {
-      if (document.activeElement === textarea || isPathInput(document.activeElement)) {
+      if (isTextFocused || isPathInput(document.activeElement)) {
         return;
       }
       event.preventDefault();
@@ -482,15 +733,15 @@
     if (options.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        currentOptionIndex = (currentOptionIndex + 1) % options.length;
-        highlightOption(card, currentOptionIndex);
+        nav.optionIndex = (nav.optionIndex + 1) % options.length;
+        highlightOption(card, nav.optionIndex);
         return;
       }
       
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        currentOptionIndex = (currentOptionIndex - 1 + options.length) % options.length;
-        highlightOption(card, currentOptionIndex);
+        nav.optionIndex = (nav.optionIndex - 1 + options.length) % options.length;
+        highlightOption(card, nav.optionIndex);
         return;
       }
       
@@ -502,7 +753,7 @@
           return;
         }
         event.preventDefault();
-        const option = options[currentOptionIndex];
+        const option = options[nav.optionIndex];
         if (option) {
           if (isDoneItem(option)) {
             if (!option.classList.contains('disabled')) {
@@ -551,19 +802,28 @@
   }
 
   function initQuestionNavigation() {
-    questionCards = Array.from(containerEl.querySelectorAll('.question-card'));
+    nav.cards = Array.from(containerEl.querySelectorAll('.question-card'));
     
-    questionCards.forEach((card, index) => {
+    nav.cards.forEach((card, index) => {
       card.setAttribute('tabindex', '0');
       card.addEventListener('focus', () => {
-        if (currentQuestionIndex !== index) {
+        if (nav.questionIndex !== index) {
           focusQuestion(index);
         }
       });
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.option-item')) return;
-        if (currentQuestionIndex !== index) {
-          focusQuestion(index);
+        if (nav.questionIndex !== index) {
+          if (e.target.closest('.option-item')) {
+            nav.questionIndex = index;
+            const prevCard = nav.cards.find(c => c.classList.contains('active'));
+            if (prevCard && prevCard !== card) {
+              prevCard.classList.remove('active');
+              clearOptionHighlight(prevCard);
+            }
+            card.classList.add('active');
+          } else {
+            focusQuestion(index);
+          }
         }
       });
     });
@@ -574,7 +834,7 @@
     
     document.addEventListener('keydown', handleQuestionKeydown);
     
-    if (questionCards.length > 0) {
+    if (nav.cards.length > 0) {
       setTimeout(() => focusQuestion(0), 100);
     }
   }
@@ -671,18 +931,7 @@
       const textarea = document.createElement("textarea");
       textarea.dataset.questionId = question.id;
       textarea.addEventListener("input", debounceSave);
-      textarea.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowRight" && textarea.selectionStart === textarea.value.length) {
-          e.preventDefault();
-          e.stopPropagation();
-          nextQuestion();
-        }
-        if (e.key === "ArrowLeft" && textarea.selectionStart === 0) {
-          e.preventDefault();
-          e.stopPropagation();
-          prevQuestion();
-        }
-      });
+      setupEdgeNavigation(textarea);
       card.appendChild(textarea);
     }
 
@@ -699,7 +948,11 @@
 
       input.addEventListener("change", () => {
         setTimeout(() => { filePickerOpen = false; }, 200);
-        handleImageChange(question.id, input);
+        clearGlobalError();
+        handleFileChange(question.id, input, questionImages, {
+          checkLimit: true,
+          onEmpty: () => clearImage(question.id),
+        });
       });
       input.addEventListener("cancel", () => {
         setTimeout(() => { filePickerOpen = false; }, 200);
@@ -726,20 +979,11 @@
         if (e.key === "Enter" && pathInput.value.trim()) {
           e.preventDefault();
           e.stopPropagation();
-          addImagePath(question.id, pathInput.value.trim());
+          questionImages.addPath(question.id, normalizePath(pathInput.value.trim()));
           pathInput.value = "";
         }
-        if (e.key === "ArrowRight" && pathInput.selectionStart === pathInput.value.length) {
-          e.preventDefault();
-          e.stopPropagation();
-          nextQuestion();
-        }
-        if (e.key === "ArrowLeft" && pathInput.selectionStart === 0) {
-          e.preventDefault();
-          e.stopPropagation();
-          prevQuestion();
-        }
       });
+      setupEdgeNavigation(pathInput);
       
       const selectedItems = document.createElement("div");
       selectedItems.className = "image-selected-items";
@@ -771,25 +1015,7 @@
         }
       });
       
-      dropzone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        dropzone.classList.add("dragover");
-      });
-      dropzone.addEventListener("dragleave", (e) => {
-        e.preventDefault();
-        dropzone.classList.remove("dragover");
-      });
-      dropzone.addEventListener("drop", (e) => {
-        e.preventDefault();
-        dropzone.classList.remove("dragover");
-        const files = e.dataTransfer?.files;
-        if (files && files.length > 0) {
-          const dt = new DataTransfer();
-          dt.items.add(files[0]);
-          input.files = dt.files;
-          input.dispatchEvent(new Event("change"));
-        }
-      });
+      setupDropzone(dropzone, input);
 
       wrapper.appendChild(input);
       wrapper.appendChild(dropzone);
@@ -841,7 +1067,7 @@
       
       attachFileInput.addEventListener("change", () => {
         setTimeout(() => { filePickerOpen = false; }, 200);
-        handleAttachChange(question.id, attachFileInput, attachBtn);
+        handleFileChange(question.id, attachFileInput, attachments);
       });
       
       attachDrop.addEventListener("click", () => {
@@ -871,29 +1097,12 @@
           attachBtn.focus();
         }
       });
-      attachDrop.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        attachDrop.classList.add("dragover");
-      });
-      attachDrop.addEventListener("dragleave", () => {
-        attachDrop.classList.remove("dragover");
-      });
-      attachDrop.addEventListener("drop", (e) => {
-        e.preventDefault();
-        attachDrop.classList.remove("dragover");
-        const files = e.dataTransfer?.files;
-        if (files && files.length > 0) {
-          const dt = new DataTransfer();
-          dt.items.add(files[0]);
-          attachFileInput.files = dt.files;
-          attachFileInput.dispatchEvent(new Event("change"));
-        }
-      });
+      setupDropzone(attachDrop, attachFileInput);
       
       attachPath.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && attachPath.value.trim()) {
           e.preventDefault();
-          addAttachPath(question.id, attachPath.value.trim(), attachBtn);
+          attachments.addPath(question.id, normalizePath(attachPath.value.trim()));
           attachPath.value = "";
         }
         if (e.key === "Tab") {
@@ -909,17 +1118,8 @@
           attachBtn.click();
           attachBtn.focus();
         }
-        if (e.key === "ArrowRight" && attachPath.selectionStart === attachPath.value.length) {
-          e.preventDefault();
-          e.stopPropagation();
-          nextQuestion();
-        }
-        if (e.key === "ArrowLeft" && attachPath.selectionStart === 0) {
-          e.preventDefault();
-          e.stopPropagation();
-          prevQuestion();
-        }
       });
+      setupEdgeNavigation(attachPath);
       
       attachInline.appendChild(attachFileInput);
       attachInline.appendChild(attachDrop);
@@ -936,6 +1136,36 @@
     error.dataset.errorFor = question.id;
     error.setAttribute("aria-live", "polite");
     card.appendChild(error);
+
+    card.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      card.classList.add("dragover");
+    });
+    card.addEventListener("dragleave", (e) => {
+      if (!card.contains(e.relatedTarget)) {
+        card.classList.remove("dragover");
+      }
+    });
+    card.addEventListener("drop", (e) => {
+      e.preventDefault();
+      card.classList.remove("dragover");
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (!file.type.startsWith("image/")) return;
+        if (question.type === "image") {
+          const input = card.querySelector('input[type="file"]');
+          if (input) {
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            input.dispatchEvent(new Event("change"));
+          }
+        } else {
+          void addPastedImage(question, file);
+        }
+      }
+    });
 
     return card;
   }
@@ -969,135 +1199,135 @@
     return { valid: true };
   }
 
-  function updateImagePreview(id) {
-    renderSelectedItems(id);
-  }
-
   function clearImage(id) {
     const input = document.querySelector(
       `input[type="file"][data-question-id="${escapeSelector(id)}"]`
     );
     if (input) input.value = "";
-    imageState.delete(id);
-
-    renderSelectedItems(id);
+    questionImages.removeFile(id);
     setFieldError(id, "");
-    debounceSave();
   }
 
-  function updateAttachBtn(questionId, btn) {
-    const hasFile = attachState.has(questionId);
-    const paths = attachPathState.get(questionId) || [];
-    if (hasFile || paths.length > 0) {
-      btn.classList.add("has-attachment");
-    } else {
-      btn.classList.remove("has-attachment");
-    }
-  }
+  async function handleFileChange(questionId, input, manager, options = {}) {
+    const { checkLimit, onEmpty } = options;
+    setFieldError(questionId, "");
 
-  function renderAttachItems(questionId, btn) {
-    const container = document.querySelector(`[data-attach-items-for="${escapeSelector(questionId)}"]`);
-    if (!container) return;
-    container.innerHTML = "";
-    
-    const entry = attachState.get(questionId);
-    if (entry) {
-      const item = document.createElement("div");
-      item.className = "selected-item selected-image";
-      
-      const img = document.createElement("img");
-      const url = URL.createObjectURL(entry.file);
-      img.src = url;
-      img.onload = () => URL.revokeObjectURL(url);
-      
-      const name = document.createElement("span");
-      name.className = "selected-item-name";
-      name.textContent = entry.file.name;
-      
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "selected-item-remove";
-      removeBtn.textContent = "x";
-      removeBtn.addEventListener("click", () => {
-        attachState.delete(questionId);
-        renderAttachItems(questionId, btn);
-        updateAttachBtn(questionId, btn);
-        debounceSave();
-      });
-      
-      item.appendChild(img);
-      item.appendChild(name);
-      item.appendChild(removeBtn);
-      container.appendChild(item);
-    }
-    
-    const paths = attachPathState.get(questionId) || [];
-    paths.forEach((p) => {
-      const item = document.createElement("div");
-      item.className = "selected-item selected-path";
-      
-      const pathText = document.createElement("span");
-      pathText.className = "selected-item-path";
-      pathText.textContent = p;
-      
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "selected-item-remove";
-      removeBtn.textContent = "x";
-      removeBtn.addEventListener("click", () => {
-        const arr = attachPathState.get(questionId) || [];
-        const idx = arr.indexOf(p);
-        if (idx > -1) arr.splice(idx, 1);
-        renderAttachItems(questionId, btn);
-        updateAttachBtn(questionId, btn);
-        debounceSave();
-      });
-      
-      item.appendChild(pathText);
-      item.appendChild(removeBtn);
-      container.appendChild(item);
-    });
-    
-    updateAttachBtn(questionId, btn);
-  }
-
-  async function handleAttachChange(questionId, input, btn) {
-    const card = input.closest(".question-card");
-    const errorEl = card?.querySelector(".field-error");
-    
     const file = input.files && input.files[0];
     if (!file) {
-      attachState.delete(questionId);
-      renderAttachItems(questionId, btn);
+      if (onEmpty) onEmpty();
+      else manager.removeFile(questionId);
+      return;
+    }
+
+    if (checkLimit && countImages(questionId) + 1 > MAX_IMAGES) {
+      setFieldError(questionId, `Only ${MAX_IMAGES} images allowed.`);
+      input.value = "";
       return;
     }
 
     try {
       const validation = await validateImage(file);
       if (!validation.valid) {
-        if (errorEl) errorEl.textContent = validation.error;
+        setFieldError(questionId, validation.error);
         input.value = "";
         return;
       }
-    } catch (err) {
-      if (errorEl) errorEl.textContent = "Failed to validate image.";
+    } catch (_err) {
+      setFieldError(questionId, "Failed to validate image.");
       input.value = "";
       return;
     }
 
-    if (errorEl) errorEl.textContent = "";
-    attachState.set(questionId, { file });
-    renderAttachItems(questionId, btn);
-    debounceSave();
+    manager.addFile(questionId, file);
   }
 
-  function addAttachPath(questionId, path, btn) {
-    const paths = attachPathState.get(questionId) || [];
-    if (!paths.includes(path)) {
-      paths.push(path);
-      attachPathState.set(questionId, paths);
-      renderAttachItems(questionId, btn);
-      debounceSave();
+  function resolveQuestionContext(target) {
+    const element = target && target.closest ? target : null;
+    let card = element ? element.closest(".question-card") : null;
+    
+    if (!card) {
+      card = document.querySelector(".question-card.active");
+    }
+    
+    if (card?.dataset?.questionId) {
+      const question = questions.find((q) => q.id === card.dataset.questionId);
+      if (question) {
+        return { question, card };
+      }
+    }
+
+    const question = questions[nav.questionIndex];
+    const fallbackCard = nav.cards[nav.questionIndex];
+    if (!question || !fallbackCard) return null;
+    return { question, card: fallbackCard };
+  }
+
+  function revealAttachmentArea(questionId) {
+    const attachInline = document.querySelector(
+      `[data-attach-inline-for="${escapeSelector(questionId)}"]`
+    );
+    if (attachInline?.classList.contains("hidden")) {
+      attachInline.classList.remove("hidden");
+    }
+  }
+
+  async function addPastedImage(question, file) {
+    if (question.type === "image") {
+      if (countImages(question.id) + 1 > MAX_IMAGES) {
+        setFieldError(question.id, `Only ${MAX_IMAGES} images allowed.`);
+        return;
+      }
+    }
+
+    try {
+      const validation = await validateImage(file);
+      if (!validation.valid) {
+        setFieldError(question.id, validation.error);
+        return;
+      }
+    } catch (_err) {
+      setFieldError(question.id, "Failed to validate image.");
+      return;
+    }
+
+    setFieldError(question.id, "");
+    if (question.type === "image") {
+      questionImages.addFile(question.id, file);
+    } else {
+      revealAttachmentArea(question.id);
+      attachments.addFile(question.id, file);
+    }
+  }
+
+  function handlePaste(event) {
+    if (nav.inSubmitArea || session.expired) return;
+    const clipboard = event.clipboardData;
+    if (!clipboard) return;
+    
+    const context = resolveQuestionContext(event.target);
+    if (!context) return;
+
+    const items = Array.from(clipboard.items || []);
+    const imageItem = items.find((item) => item.type && item.type.startsWith("image/"));
+    
+    if (imageItem) {
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      event.preventDefault();
+      void addPastedImage(context.question, file);
+      return;
+    }
+
+    const text = clipboard.getData("text/plain")?.trim();
+    if (text && (text.startsWith("/") || text.startsWith("~") || text.match(/^[a-zA-Z]:\\/))) {
+      event.preventDefault();
+      const normalizedPath = normalizePath(text);
+      if (context.question.type === "image") {
+        questionImages.addPath(context.question.id, normalizedPath);
+      } else {
+        revealAttachmentArea(context.question.id);
+        attachments.addPath(context.question.id, normalizedPath);
+      }
     }
   }
 
@@ -1109,106 +1339,44 @@
     return count;
   }
 
-  async function handleImageChange(id, input) {
-    clearGlobalError();
-    setFieldError(id, "");
-
-    const file = input.files && input.files[0];
-    if (!file) {
-      clearImage(id);
-      return;
+  function getQuestionValue(question) {
+    const id = question.id;
+    if (question.type === "single") {
+      const selected = formEl.querySelector(`input[name="${escapeSelector(id)}"]:checked`);
+      return selected ? selected.value : "";
     }
-
-    if (countImages(id) + 1 > MAX_IMAGES) {
-      setFieldError(id, `Only ${MAX_IMAGES} images allowed.`);
-      input.value = "";
-      return;
+    if (question.type === "multi") {
+      return Array.from(
+        formEl.querySelectorAll(`input[name="${escapeSelector(id)}"]:checked`)
+      ).map((input) => input.value);
     }
-
-    try {
-      const validation = await validateImage(file);
-      if (!validation.valid) {
-        setFieldError(id, validation.error);
-        input.value = "";
-        return;
-      }
-    } catch (err) {
-      setFieldError(id, "Failed to validate image.");
-      input.value = "";
-      return;
+    if (question.type === "text") {
+      const textarea = formEl.querySelector(`textarea[data-question-id="${escapeSelector(id)}"]`);
+      return textarea ? textarea.value : "";
     }
-
-    imageState.set(id, { file });
-    updateImagePreview(id);
-    debounceSave();
+    if (question.type === "image") {
+      return questionImages.getPaths(id);
+    }
+    return "";
   }
 
   function collectResponses() {
-    const responses = [];
-
-    questions.forEach((question) => {
-      const resp = { id: question.id };
-      
-      if (question.type === "single") {
-        const selected = formEl.querySelector(
-          `input[name="${escapeSelector(question.id)}"]:checked`
-        );
-        resp.value = selected ? selected.value : "";
-      }
-
-      if (question.type === "multi") {
-        const selected = Array.from(
-          formEl.querySelectorAll(`input[name="${escapeSelector(question.id)}"]:checked`)
-        ).map((input) => input.value);
-        resp.value = selected;
-      }
-
-      if (question.type === "text") {
-        const textarea = formEl.querySelector(
-          `textarea[data-question-id="${escapeSelector(question.id)}"]`
-        );
-        resp.value = textarea ? textarea.value : "";
-      }
-
-      if (question.type === "image") {
-        const paths = imagePathState.get(question.id) || [];
-        resp.value = paths;
-        resp.type = "paths";
-      }
-      
+    return questions.map((question) => {
+      const resp = { id: question.id, value: getQuestionValue(question) };
+      if (question.type === "image") resp.type = "paths";
       if (question.type !== "image") {
-        const attachPaths = attachPathState.get(question.id) || [];
-        if (attachPaths.length > 0) {
-          resp.attachments = attachPaths;
-        }
+        const attachPaths = attachments.getPaths(question.id);
+        if (attachPaths.length > 0) resp.attachments = attachPaths;
       }
-
-      responses.push(resp);
+      return resp;
     });
-
-    return responses;
   }
 
   function collectPersistedData() {
     const data = {};
     questions.forEach((question) => {
-      if (question.type === "single") {
-        const selected = formEl.querySelector(
-          `input[name="${escapeSelector(question.id)}"]:checked`
-        );
-        data[question.id] = selected ? selected.value : "";
-      }
-      if (question.type === "multi") {
-        const selected = Array.from(
-          formEl.querySelectorAll(`input[name="${escapeSelector(question.id)}"]:checked`)
-        ).map((input) => input.value);
-        data[question.id] = selected;
-      }
-      if (question.type === "text") {
-        const textarea = formEl.querySelector(
-          `textarea[data-question-id="${escapeSelector(question.id)}"]`
-        );
-        data[question.id] = textarea ? textarea.value : "";
+      if (question.type !== "image") {
+        data[question.id] = getQuestionValue(question);
       }
     });
     return data;
@@ -1256,19 +1424,19 @@
   }
 
   function saveProgress() {
-    if (!storageKey) return;
+    if (!session.storageKey) return;
     const data = collectPersistedData();
     try {
-      localStorage.setItem(storageKey, JSON.stringify(data));
+      localStorage.setItem(session.storageKey, JSON.stringify(data));
     } catch (_err) {
       // ignore storage errors
     }
   }
 
   function loadProgress() {
-    if (!storageKey) return;
+    if (!session.storageKey) return;
     try {
-      const saved = localStorage.getItem(storageKey);
+      const saved = localStorage.getItem(session.storageKey);
       if (saved) {
         populateForm(JSON.parse(saved));
         questions.forEach((q) => {
@@ -1283,9 +1451,9 @@
   }
 
   function clearProgress() {
-    if (!storageKey) return;
+    if (!session.storageKey) return;
     try {
-      localStorage.removeItem(storageKey);
+      localStorage.removeItem(session.storageKey);
     } catch (_err) {
       // ignore storage errors
     }
@@ -1304,10 +1472,10 @@
   async function initStorage() {
     try {
       const hash = await hashQuestions();
-      storageKey = `pi-interview-${hash}`;
+      session.storageKey = `pi-interview-${hash}`;
       loadProgress();
     } catch (_err) {
-      storageKey = null;
+      session.storageKey = null;
     }
   }
 
@@ -1331,27 +1499,33 @@
     const responses = collectResponses();
     const images = [];
 
-    for (const [id, entry] of imageState.entries()) {
-      const file = entry.file;
-      const data = await readFileBase64(file);
-      images.push({
-        id,
-        filename: file.name,
-        mimeType: file.type,
-        data,
-      });
-    }
-    
-    for (const [id, entry] of attachState.entries()) {
-      const file = entry.file;
-      const data = await readFileBase64(file);
-      images.push({
-        id,
-        filename: file.name,
-        mimeType: file.type,
-        data,
-        isAttachment: true,
-      });
+    for (const question of questions) {
+      const imageEntry = questionImages.getFile(question.id);
+      if (imageEntry) {
+        const file = imageEntry.file;
+        const data = await readFileBase64(file);
+        images.push({
+          id: question.id,
+          filename: file.name,
+          mimeType: file.type,
+          data,
+        });
+      }
+
+      if (question.type !== "image") {
+        const attachEntry = attachments.getFile(question.id);
+        if (attachEntry) {
+          const file = attachEntry.file;
+          const data = await readFileBase64(file);
+          images.push({
+            id: question.id,
+            filename: file.name,
+            mimeType: file.type,
+            data,
+            isAttachment: true,
+          });
+        }
+      }
     }
 
     return { responses, images };
@@ -1400,6 +1574,8 @@
   }
 
   function init() {
+    initTheme();
+
     const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
     const modKey = document.querySelector(".mod-key");
     if (modKey) {
@@ -1420,12 +1596,12 @@
       if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
         e.stopImmediatePropagation();
-        focusQuestion(questionCards.length - 1, 'prev');
+        focusQuestion(nav.cards.length - 1, 'prev');
       }
     });
     
     closeTabBtn.addEventListener("click", async () => {
-      if (countdownInterval) clearInterval(countdownInterval);
+      if (timers.countdown) clearInterval(timers.countdown);
       try {
         await fetch("/cancel", {
           method: "POST",
@@ -1437,16 +1613,16 @@
     });
 
     stayBtn.addEventListener("click", () => {
-      if (countdownInterval) clearInterval(countdownInterval);
+      if (timers.countdown) clearInterval(timers.countdown);
       expiredOverlay.classList.remove("visible");
       expiredOverlay.classList.add("hidden");
       
-      sessionExpired = false;
+      session.expired = false;
       submitBtn.disabled = false;
       
       if (timeout > 0) {
         startCountdownDisplay();
-        expirationTimeout = setTimeout(() => {
+        timers.expiration = setTimeout(() => {
           showSessionExpired();
         }, timeout * 1000);
       }
@@ -1465,10 +1641,11 @@
         }
       }
     }, true);
+    document.addEventListener("paste", handlePaste);
 
     if (timeout > 0) {
       startCountdownDisplay();
-      expirationTimeout = setTimeout(() => {
+      timers.expiration = setTimeout(() => {
         showSessionExpired();
       }, timeout * 1000);
       

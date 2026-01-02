@@ -19,6 +19,7 @@ export interface InterviewServerOptions {
 	sessionId: string;
 	timeout: number;
 	verbose?: boolean;
+	theme?: InterviewThemeConfig;
 }
 
 export interface InterviewServerCallbacks {
@@ -32,6 +33,16 @@ export interface InterviewServerHandle {
 	close: () => void;
 }
 
+export type ThemeMode = "auto" | "light" | "dark";
+
+export interface InterviewThemeConfig {
+	mode?: ThemeMode;
+	name?: string;
+	lightPath?: string;
+	darkPath?: string;
+	toggleHotkey?: string;
+}
+
 const MAX_BODY_SIZE = 15 * 1024 * 1024;
 const MAX_IMAGES = 12;
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -41,6 +52,23 @@ const FORM_DIR = join(dirname(fileURLToPath(import.meta.url)), "form");
 const TEMPLATE = readFileSync(join(FORM_DIR, "index.html"), "utf-8");
 const STYLES = readFileSync(join(FORM_DIR, "styles.css"), "utf-8");
 const SCRIPT = readFileSync(join(FORM_DIR, "script.js"), "utf-8");
+const THEMES_DIR = join(FORM_DIR, "themes");
+const BUILTIN_THEMES = new Map<string, { light: string; dark: string }>([
+	[
+		"default",
+		{
+			light: readFileSync(join(THEMES_DIR, "default-light.css"), "utf-8"),
+			dark: readFileSync(join(THEMES_DIR, "default-dark.css"), "utf-8"),
+		},
+	],
+	[
+		"tufte",
+		{
+			light: readFileSync(join(THEMES_DIR, "tufte-light.css"), "utf-8"),
+			dark: readFileSync(join(THEMES_DIR, "tufte-dark.css"), "utf-8"),
+		},
+	],
+]);
 
 class BodyTooLargeError extends Error {
 	statusCode = 413;
@@ -57,6 +85,11 @@ function safeInlineJSON(data: unknown): string {
 		.replace(/</g, "\\u003c")
 		.replace(/>/g, "\\u003e")
 		.replace(/&/g, "\\u0026");
+}
+
+function normalizeThemeMode(mode?: string): ThemeMode | undefined {
+	if (mode === "auto" || mode === "light" || mode === "dark") return mode;
+	return undefined;
 }
 
 function sendText(res: ServerResponse, status: number, text: string) {
@@ -178,6 +211,35 @@ export async function startInterviewServer(
 		questionById.set(question.id, question);
 	}
 
+	const themeConfig = options.theme ?? {};
+	const resolvedThemeName =
+		themeConfig.name && BUILTIN_THEMES.has(themeConfig.name) ? themeConfig.name : "default";
+	if (themeConfig.name && !BUILTIN_THEMES.has(themeConfig.name)) {
+		log(verbose, `Unknown theme "${themeConfig.name}", using "default"`);
+	}
+	const builtinTheme = BUILTIN_THEMES.get(resolvedThemeName) ?? BUILTIN_THEMES.get("default");
+	if (!builtinTheme) {
+		throw new Error("Missing default theme assets");
+	}
+
+	const readThemeFile = (filePath: string, fallback: string, label: string) => {
+		try {
+			return readFileSync(filePath, "utf-8");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			log(verbose, `Failed to load ${label} theme from "${filePath}": ${message}`);
+			return fallback;
+		}
+	};
+
+	const themeLightCss = themeConfig.lightPath
+		? readThemeFile(themeConfig.lightPath, builtinTheme.light, "light")
+		: builtinTheme.light;
+	const themeDarkCss = themeConfig.darkPath
+		? readThemeFile(themeConfig.darkPath, builtinTheme.dark, "dark")
+		: builtinTheme.dark;
+	const themeMode = normalizeThemeMode(themeConfig.mode) ?? "dark";
+
 	const server = http.createServer(async (req, res) => {
 		try {
 			const method = req.method || "GET";
@@ -192,6 +254,10 @@ export async function startInterviewServer(
 					description: questions.description,
 					sessionToken,
 					timeout,
+					theme: {
+						mode: themeMode,
+						toggleHotkey: themeConfig.toggleHotkey,
+					},
 				});
 				const html = TEMPLATE
 					.replace("/* __INTERVIEW_DATA_PLACEHOLDER__ */", inlineData)
@@ -217,6 +283,26 @@ export async function startInterviewServer(
 					"Cache-Control": "no-store",
 				});
 				res.end(STYLES);
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/theme-light.css") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+				res.writeHead(200, {
+					"Content-Type": "text/css; charset=utf-8",
+					"Cache-Control": "no-store",
+				});
+				res.end(themeLightCss);
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/theme-dark.css") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+				res.writeHead(200, {
+					"Content-Type": "text/css; charset=utf-8",
+					"Cache-Control": "no-store",
+				});
+				res.end(themeDarkCss);
 				return;
 			}
 

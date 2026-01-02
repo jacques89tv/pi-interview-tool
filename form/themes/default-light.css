@@ -1,0 +1,20 @@
+:root {
+  --bg-body: #f6f6f2;
+  --bg-card: #ffffff;
+  --bg-elevated: #f0f0ea;
+  --bg-selected: #e8e8e0;
+  --bg-hover: #efefe6;
+  --fg: #2b2b2b;
+  --fg-muted: #5a5a5a;
+  --fg-dim: #7a7a7a;
+  --accent: #2b7a78;
+  --accent-hover: #3a8d8a;
+  --accent-bright: #00a6c2;
+  --accent-muted: rgba(43, 122, 120, 0.25);
+  --border: #7a8bd8;
+  --border-muted: #c7c7bf;
+  --success: #6c8b5a;
+  --warning: #b07d2a;
+  --error: #b65050;
+  --focus-ring: rgba(43, 122, 120, 0.25);
+}

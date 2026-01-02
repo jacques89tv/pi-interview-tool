@@ -1,25 +1,17 @@
-import { Type, type Static } from "@sinclair/typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+export interface Question {
+	id: string;
+	type: "single" | "multi" | "text" | "image";
+	question: string;
+	options?: string[];
+	recommended?: string | string[];
+	context?: string;
+}
 
-const QuestionType = StringEnum(["single", "multi", "text", "image"] as const);
-
-export const QuestionSchema = Type.Object({
-	id: Type.String({ description: "Unique identifier" }),
-	type: QuestionType,
-	question: Type.String({ description: "Question text" }),
-	options: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
-	recommended: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
-	context: Type.Optional(Type.String({ description: "Help text" })),
-});
-
-export const QuestionsFileSchema = Type.Object({
-	title: Type.Optional(Type.String()),
-	description: Type.Optional(Type.String()),
-	questions: Type.Array(QuestionSchema, { minItems: 1 }),
-});
-
-export type Question = Static<typeof QuestionSchema>;
-export type QuestionsFile = Static<typeof QuestionsFileSchema>;
+export interface QuestionsFile {
+	title?: string;
+	description?: string;
+	questions: Question[];
+}
 
 function validateBasicStructure(data: unknown): QuestionsFile {
 	if (!data || typeof data !== "object") {

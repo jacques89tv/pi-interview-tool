@@ -18,6 +18,17 @@ interface InterviewDetails {
 interface InterviewSettings {
 	browser?: string;
 	timeout?: number;
+	theme?: InterviewThemeSettings;
+}
+
+type ThemeMode = "auto" | "light" | "dark";
+
+interface InterviewThemeSettings {
+	mode?: ThemeMode;
+	name?: string;
+	lightPath?: string;
+	darkPath?: string;
+	toggleHotkey?: string;
 }
 
 const InterviewParams = Type.Object({
@@ -26,6 +37,18 @@ const InterviewParams = Type.Object({
 		Type.Number({ description: "Seconds before auto-timeout", default: 600 })
 	),
 	verbose: Type.Optional(Type.Boolean({ description: "Enable debug logging", default: false })),
+	theme: Type.Optional(
+		Type.Object(
+			{
+				mode: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("light"), Type.Literal("dark")])),
+				name: Type.Optional(Type.String()),
+				lightPath: Type.Optional(Type.String()),
+				darkPath: Type.Optional(Type.String()),
+				toggleHotkey: Type.Optional(Type.String()),
+			},
+			{ additionalProperties: false }
+		)
+	),
 });
 
 function getSettings(): InterviewSettings {
@@ -36,6 +59,33 @@ function getSettings(): InterviewSettings {
 	} catch {
 		return {};
 	}
+}
+
+function expandHome(value: string): string {
+	if (value.startsWith("~" + path.sep)) {
+		return path.join(os.homedir(), value.slice(2));
+	}
+	return value;
+}
+
+function resolveOptionalPath(value: string | undefined, cwd: string): string | undefined {
+	if (!value) return undefined;
+	const expanded = expandHome(value);
+	return path.isAbsolute(expanded) ? expanded : path.join(cwd, expanded);
+}
+
+function mergeThemeConfig(
+	base: InterviewThemeSettings | undefined,
+	override: InterviewThemeSettings | undefined,
+	cwd: string
+): InterviewThemeSettings | undefined {
+	if (!base && !override) return undefined;
+	const merged: InterviewThemeSettings = { ...(base ?? {}), ...(override ?? {}) };
+	return {
+		...merged,
+		lightPath: resolveOptionalPath(merged.lightPath, cwd),
+		darkPath: resolveOptionalPath(merged.darkPath, cwd),
+	};
 }
 
 function loadQuestions(questionsPath: string, cwd: string): QuestionsFile {
@@ -77,14 +127,16 @@ const factory: CustomToolFactory = (pi) => {
 	const tool: CustomTool<typeof InterviewParams, InterviewDetails> = {
 		name: "interview",
 		label: "Interview",
-		description: "Present an interactive form to gather user responses to questions.",
+		description:
+			"Present an interactive form to gather user responses to questions. Image responses and attachments are returned as file paths - use the read tool directly to display them (no need to verify with file command first).",
 		parameters: InterviewParams,
 
 		async execute(_toolCallId, params, _onUpdate, ctx, signal) {
-			const { questions, timeout, verbose } = params as {
+			const { questions, timeout, verbose, theme } = params as {
 				questions: string;
 				timeout?: number;
 				verbose?: boolean;
+				theme?: InterviewThemeSettings;
 			};
 
 			if (!pi.hasUI) {
@@ -103,6 +155,7 @@ const factory: CustomToolFactory = (pi) => {
 
 			const settings = getSettings();
 			const timeoutSeconds = timeout ?? settings.timeout ?? 600;
+			const themeConfig = mergeThemeConfig(settings.theme, theme, pi.cwd);
 			const questionsData = loadQuestions(questions, pi.cwd);
 
 			if (signal?.aborted) {
@@ -157,7 +210,14 @@ const factory: CustomToolFactory = (pi) => {
 				signal?.addEventListener("abort", handleAbort, { once: true });
 
 				startInterviewServer(
-					{ questions: questionsData, sessionToken, sessionId, timeout: timeoutSeconds, verbose },
+					{
+						questions: questionsData,
+						sessionToken,
+						sessionId,
+						timeout: timeoutSeconds,
+						verbose,
+						theme: themeConfig,
+					},
 					{
 						onSubmit: (responses) => finish("completed", responses),
 						onCancel: () => finish("cancelled"),

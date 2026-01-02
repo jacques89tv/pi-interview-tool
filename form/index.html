@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Interview</title>
   <link rel="stylesheet" href="/styles.css?session=__SESSION_TOKEN__">
+  <link rel="stylesheet" href="/theme-light.css?session=__SESSION_TOKEN__" data-theme-link="light" media="(prefers-color-scheme: light)">
+  <link rel="stylesheet" href="/theme-dark.css?session=__SESSION_TOKEN__" data-theme-link="dark" media="(prefers-color-scheme: dark)">
 </head>
 <body>
   <main class="interview-container">
@@ -43,11 +45,6 @@
       </div>
       <div class="shortcut-divider"></div>
       <div class="shortcut">
-        <span class="shortcut-keys"><kbd>A</kbd></span>
-        <span class="shortcut-label">Attach</span>
-      </div>
-      <div class="shortcut-divider"></div>
-      <div class="shortcut">
         <span class="shortcut-keys"><kbd>Esc</kbd></span>
         <span class="shortcut-label">Cancel</span>
       </div>
@@ -55,6 +52,11 @@
       <div class="shortcut recommended-hint">
         <span class="shortcut-keys"><span class="star">*</span></span>
         <span class="shortcut-label">Recommended</span>
+      </div>
+      <div class="shortcut-divider"></div>
+      <div class="shortcut hidden" data-theme-shortcut>
+        <span class="shortcut-keys" data-theme-keys></span>
+        <span class="shortcut-label">Theme</span>
       </div>
     </nav>
 
