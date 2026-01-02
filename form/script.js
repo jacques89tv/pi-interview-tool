@@ -289,14 +289,12 @@
   }
 
   function isPathInput(el) {
-    return el && el.classList.contains('image-path-input');
+    return el && (el.classList.contains('image-path-input') || el.classList.contains('attach-inline-path'));
   }
 
   function isDropzone(el) {
     return el && el.classList.contains('file-dropzone');
   }
-
-  
 
   function isOptionInput(el) {
     return el && (el.type === 'radio' || el.type === 'checkbox');
@@ -439,11 +437,14 @@
       event.preventDefault();
       const attachBtn = card.querySelector('.attach-btn');
       if (attachBtn) {
-        attachBtn.click();
         const attachInline = card.querySelector('.attach-inline');
-        if (attachInline && !attachInline.classList.contains('hidden')) {
+        const wasHidden = attachInline?.classList.contains('hidden');
+        attachBtn.click();
+        if (wasHidden && attachInline && !attachInline.classList.contains('hidden')) {
           const attachDrop = attachInline.querySelector('.attach-inline-drop');
           if (attachDrop) attachDrop.focus();
+        } else {
+          attachBtn.focus();
         }
       }
       return;
