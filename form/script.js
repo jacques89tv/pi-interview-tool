@@ -34,6 +34,7 @@
   let filePickerOpen = false;
   let countdownEndTime = 0;
   let expirationTimeout = null;
+  let tickLoopRunning = false;
   const CLOSE_DELAY = 10;
   const RING_CIRCUMFERENCE = 100.53;
 
@@ -62,6 +63,9 @@
     
     countdownBadge.classList.remove("hidden");
     
+    if (tickLoopRunning) return;
+    tickLoopRunning = true;
+    
     const tick = () => {
       const now = Date.now();
       const remaining = Math.max(0, Math.ceil((countdownEndTime - now) / 1000));
@@ -76,6 +80,8 @@
       
       if (remaining > 0 && !sessionExpired) {
         requestAnimationFrame(tick);
+      } else {
+        tickLoopRunning = false;
       }
     };
     
@@ -98,6 +104,7 @@
   function showSessionExpired() {
     if (sessionExpired) return;
     sessionExpired = true;
+    tickLoopRunning = false;
     
     submitBtn.disabled = true;
     countdownBadge?.classList.add("hidden");

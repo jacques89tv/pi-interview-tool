@@ -113,7 +113,7 @@ body {
 }
 
 .option-item:hover {
-  background: var(--bg-elevated);
+  background: var(--bg-selected);
 }
 
 .option-item.focused {
