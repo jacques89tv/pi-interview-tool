@@ -2,7 +2,7 @@
 
 A custom tool for pi-agent that opens a web-based form to gather user responses to clarification questions.
 
-https://github.com/user-attachments/assets/ca364bc0-7006-44b9-8871-1724c618d176
+https://github.com/user-attachments/assets/52285bd9-956e-4020-aca5-9fbd82916934
 
 ## Installation
 
