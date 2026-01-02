@@ -429,12 +429,18 @@
     }
     
     if (event.key === 'ArrowLeft') {
+      if (document.activeElement === textarea || isPathInput(document.activeElement)) {
+        return;
+      }
       event.preventDefault();
       prevQuestion();
       return;
     }
     
     if (event.key === 'ArrowRight') {
+      if (document.activeElement === textarea || isPathInput(document.activeElement)) {
+        return;
+      }
       event.preventDefault();
       nextQuestion();
       return;
