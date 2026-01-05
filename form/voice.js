@@ -392,9 +392,9 @@ const VoiceController = (() => {
     conversation.sendContextualUpdate?.(message);
   }
 
-  async function start() {
+  async function startWithKey(overrideKey) {
     const voiceConfig = getVoiceConfig();
-    let apiKey = getStoredApiKey();
+    const apiKey = overrideKey || getStoredApiKey();
     if (!voiceConfig.apiKeyConfigured && !apiKey) {
       if (state === STATE.error) {
         setState(STATE.idle);
@@ -484,6 +484,10 @@ const VoiceController = (() => {
     }
   }
 
+  async function start() {
+    return startWithKey(null);
+  }
+
   async function stop() {
     if (conversation) {
       try {
@@ -525,11 +529,9 @@ const VoiceController = (() => {
         if (!key) return;
         if (ui.apiKeyRemember?.checked) {
           storeApiKey(key);
-        } else {
-          clearApiKey();
         }
         hideApiKeyModal();
-        start();
+        startWithKey(key);
       });
     }
 
