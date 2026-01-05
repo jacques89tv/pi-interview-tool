@@ -52,6 +52,7 @@ const VoiceController = (() => {
   let transcript = [];
   let currentVoiceQuestion = null;
   let sessionCounter = 0;
+  let isToggling = false;
 
   const STORAGE_KEY = "pi-interview-voice-apikey";
 
@@ -191,13 +192,13 @@ const VoiceController = (() => {
   }
 
   function navigateToQuestion(index) {
-    API.focusQuestion(index, "next", "voice");
+    API.focusQuestion?.(index, "next", "voice");
     setCurrentQuestion(index);
   }
 
   function updateFormFromVoice(questionId, value) {
     const question = API.questions.find((q) => q.id === questionId);
-    if (!question) return;
+    if (!question || !API.escapeSelector || !API.formEl) return;
 
     if (question.type === "single" && typeof value === "string") {
       const radios = API.formEl.querySelectorAll(
@@ -310,7 +311,7 @@ const VoiceController = (() => {
         questionId: API.questions[prevIndex]?.id,
         questionIndex: prevIndex + 1,
         questionText: API.questions[prevIndex]?.question,
-        currentAnswer: API.getQuestionValue(API.questions[prevIndex]) || null,
+        currentAnswer: API.getQuestionValue?.(API.questions[prevIndex]) || null,
       });
       return;
     }
@@ -328,7 +329,7 @@ const VoiceController = (() => {
         questionId: next.question.id,
         questionIndex: next.index + 1,
         questionText: next.question.question,
-        currentAnswer: API.getQuestionValue(next.question) || null,
+        currentAnswer: API.getQuestionValue?.(next.question) || null,
       });
     }
   }
@@ -494,12 +495,18 @@ const VoiceController = (() => {
     setState(STATE.idle);
   }
 
-  function toggle() {
-    if (isActive()) {
-      stop();
-      return;
+  async function toggle() {
+    if (isToggling) return;
+    isToggling = true;
+    try {
+      if (isActive()) {
+        await stop();
+      } else {
+        await start();
+      }
+    } finally {
+      isToggling = false;
     }
-    start();
   }
 
   function init() {
@@ -511,6 +518,13 @@ const VoiceController = (() => {
     }
 
     document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        if (ui.apiKeyModal && !ui.apiKeyModal.classList.contains("hidden")) {
+          hideApiKeyModal();
+          setState(STATE.idle);
+        }
+        return;
+      }
       if (event.key.toLowerCase() !== "v") return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const active = document.activeElement;
