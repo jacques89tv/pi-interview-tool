@@ -44,6 +44,7 @@
     inSubmitArea: false,
     cards: [],
   };
+  let navDebounce = null;
   const session = {
     storageKey: null,
     expired: false,
@@ -845,20 +846,23 @@
     }
   }
 
-  function focusQuestion(index, fromDirection = 'next') {
+  function focusQuestion(index, fromDirection = 'next', source = 'user') {
     if (index < 0 || index >= nav.cards.length) return;
     
     deactivateSubmitArea();
     
     const prevCard = nav.cards[nav.questionIndex];
     if (prevCard) {
-      prevCard.classList.remove('active', 'keyboard-nav');
+      prevCard.classList.remove('active', 'keyboard-nav', 'voice-focus');
       clearOptionHighlight(prevCard);
     }
     
     nav.questionIndex = index;
     const card = nav.cards[index];
     card.classList.add('active');
+    if (source === 'voice') {
+      card.classList.add('voice-focus');
+    }
     ensureElementVisible(card);
     
     const options = getOptionsForCard(card);
@@ -877,6 +881,29 @@
         textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
       }
     }
+
+    if (source === 'user') {
+      onUserNavigatedTo(index);
+    }
+  }
+
+  function onUserNavigatedTo(questionIndex) {
+    const voice = window.VoiceController;
+    if (!voice || !voice.isActive || !voice.isActive()) return;
+    const question = questions[questionIndex];
+    if (!question) return;
+
+    voice.syncCurrentQuestion?.(questionIndex);
+    clearTimeout(navDebounce);
+    navDebounce = setTimeout(() => {
+      voice.injectContext?.({
+        type: "user_navigation",
+        questionId: question.id,
+        questionIndex: questionIndex + 1,
+        questionText: question.question,
+        currentAnswer: getQuestionValue(question) || null,
+      });
+    }, 300);
   }
 
   function nextQuestion() {
@@ -1140,6 +1167,7 @@
           if (question.type === "multi") {
             updateDoneState(question.id);
           }
+          notifyAnswerUpdate(question.id);
         });
 
         const text = document.createElement("span");
@@ -1175,18 +1203,21 @@
           if (question.type === "multi") updateDoneState(question.id);
         }
         debounceSave();
+        notifyAnswerUpdate(question.id);
       });
       otherInput.addEventListener("focus", () => {
         if (!otherCheck.checked) {
           otherCheck.checked = true;
           if (question.type === "multi") updateDoneState(question.id);
           debounceSave();
+          notifyAnswerUpdate(question.id);
         }
       });
       otherCheck.addEventListener("change", () => {
         debounceSave();
         if (question.type === "multi") updateDoneState(question.id);
         if (otherCheck.checked) otherInput.focus();
+        notifyAnswerUpdate(question.id);
       });
       setupEdgeNavigation(otherInput);
       otherLabel.appendChild(otherCheck);
@@ -1220,7 +1251,10 @@
     if (question.type === "text") {
       const textarea = document.createElement("textarea");
       textarea.dataset.questionId = question.id;
-      textarea.addEventListener("input", debounceSave);
+      textarea.addEventListener("input", () => {
+        debounceSave();
+        notifyAnswerUpdate(question.id);
+      });
       setupEdgeNavigation(textarea);
       card.appendChild(textarea);
     }
@@ -1271,6 +1305,7 @@
           e.stopPropagation();
           questionImages.addPath(question.id, normalizePath(pathInput.value.trim()));
           pathInput.value = "";
+          notifyAnswerUpdate(question.id);
         }
       });
       setupEdgeNavigation(pathInput);
@@ -1529,6 +1564,7 @@
     }
 
     manager.addFile(questionId, file);
+    notifyAnswerUpdate(questionId);
   }
 
   function resolveQuestionContext(target) {
@@ -1655,6 +1691,39 @@
       return questionImages.getPaths(id);
     }
     return "";
+  }
+
+  function getAnsweredQuestionIds() {
+    return questions
+      .filter((q) => {
+        if (q.type === "image") {
+          return questionImages.hasContent(q.id);
+        }
+        const value = getQuestionValue(q);
+        if (Array.isArray(value)) return value.length > 0;
+        return value !== "";
+      })
+      .map((q) => q.id);
+  }
+
+  function getAllUnanswered() {
+    const answered = new Set(getAnsweredQuestionIds());
+    return questions
+      .map((question, index) => ({ question, index }))
+      .filter(({ question }) => !answered.has(question.id));
+  }
+
+  function notifyAnswerUpdate(questionId) {
+    const voice = window.VoiceController;
+    if (!voice || !voice.isActive || !voice.isActive()) return;
+    const question = questions.find((q) => q.id === questionId);
+    if (!question) return;
+    voice.injectContext?.({
+      type: "answer_updated",
+      questionId,
+      value: getQuestionValue(question),
+    });
+    voice.injectContext?.({ type: "sync_state" });
   }
 
   function collectResponses() {
@@ -1855,7 +1924,8 @@
       }
     }
 
-    return { responses, images };
+    const transcript = window.VoiceController?.getTranscript?.();
+    return { responses, images, transcript: transcript && transcript.length ? transcript : undefined };
   }
 
   async function submitForm(event) {
@@ -2037,6 +2107,25 @@
 
     initQuestionNavigation();
   }
+
+  window.__INTERVIEW_API__ = {
+    questions,
+    nav,
+    formEl,
+    sessionToken,
+    data,
+    focusQuestion,
+    getQuestionValue,
+    getAnsweredQuestionIds,
+    getAllUnanswered,
+    debounceSave,
+    escapeSelector,
+    populateForm,
+    updateDoneState,
+    setFieldError,
+    clearFieldErrors,
+    notifyAnswerUpdate,
+  };
 
   init();
 })();

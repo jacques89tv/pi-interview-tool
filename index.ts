@@ -6,7 +6,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
-import { startInterviewServer, getActiveSessions, type ResponseItem } from "./server.js";
+import { startInterviewServer, getActiveSessions, type ResponseItem, type TranscriptEntry } from "./server.js";
 import { validateQuestions, type QuestionsFile } from "./schema.js";
 
 function formatTimeAgo(timestamp: number): string {
@@ -51,12 +51,16 @@ interface InterviewDetails {
 	responses: ResponseItem[];
 	url: string;
 	queuedMessage?: string;
+	transcript?: TranscriptEntry[];
 }
 
 interface InterviewSettings {
 	browser?: string;
 	timeout?: number;
 	theme?: InterviewThemeSettings;
+	voice?: {
+		apiKey?: string;
+	};
 }
 
 type ThemeMode = "auto" | "light" | "dark";
@@ -195,6 +199,7 @@ export default function (pi: ExtensionAPI) {
 			const timeoutSeconds = timeout ?? settings.timeout ?? 600;
 			const themeConfig = mergeThemeConfig(settings.theme, theme, pi.cwd);
 			const questionsData = loadQuestions(questions, pi.cwd);
+			const voiceApiKey = settings.voice?.apiKey;
 
 			if (signal?.aborted) {
 				return {
@@ -220,7 +225,8 @@ export default function (pi: ExtensionAPI) {
 				const finish = (
 					status: InterviewDetails["status"],
 					responses: ResponseItem[] = [],
-					cancelReason?: "timeout" | "user" | "stale"
+					cancelReason?: "timeout" | "user" | "stale",
+					transcript?: TranscriptEntry[]
 				) => {
 					if (resolved) return;
 					resolved = true;
@@ -244,7 +250,7 @@ export default function (pi: ExtensionAPI) {
 
 					resolve({
 						content: [{ type: "text", text }],
-						details: { status, url, responses },
+						details: { status, url, responses, transcript },
 					});
 				};
 
@@ -260,9 +266,10 @@ export default function (pi: ExtensionAPI) {
 						timeout: timeoutSeconds,
 						verbose,
 						theme: themeConfig,
+						voiceApiKey,
 					},
 					{
-						onSubmit: (responses) => finish("completed", responses),
+						onSubmit: (responses, transcript) => finish("completed", responses, undefined, transcript),
 						onCancel: (reason) =>
 							reason === "timeout" ? finish("timeout") : finish("cancelled", [], reason),
 					}

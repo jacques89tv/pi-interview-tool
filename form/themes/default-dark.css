@@ -1,1 +1,7 @@
 /* Default dark theme uses base styles.css tokens. */
+:root {
+  --voice-active-color: #4ade80;
+  --voice-active-color-dim: rgba(74, 222, 128, 0.4);
+  --voice-indicator-bg: rgba(0, 0, 0, 0.85);
+  --voice-indicator-text: #fff;
+}

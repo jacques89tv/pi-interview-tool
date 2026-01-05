@@ -11,6 +11,13 @@ export interface QuestionsFile {
 	title?: string;
 	description?: string;
 	questions: Question[];
+	voice?: VoiceConfig;
+}
+
+export interface VoiceConfig {
+	enabled?: boolean;
+	greeting?: string;
+	closing?: string;
 }
 
 function validateBasicStructure(data: unknown): QuestionsFile {
@@ -26,6 +33,22 @@ function validateBasicStructure(data: unknown): QuestionsFile {
 	
 	if (obj.description !== undefined && typeof obj.description !== "string") {
 		throw new Error("Invalid questions file: description must be a string");
+	}
+
+	if (obj.voice !== undefined) {
+		if (!obj.voice || typeof obj.voice !== "object") {
+			throw new Error("Invalid questions file: voice must be an object");
+		}
+		const voice = obj.voice as Record<string, unknown>;
+		if (voice.enabled !== undefined && typeof voice.enabled !== "boolean") {
+			throw new Error("Invalid questions file: voice.enabled must be a boolean");
+		}
+		if (voice.greeting !== undefined && typeof voice.greeting !== "string") {
+			throw new Error("Invalid questions file: voice.greeting must be a string");
+		}
+		if (voice.closing !== undefined && typeof voice.closing !== "string") {
+			throw new Error("Invalid questions file: voice.closing must be a string");
+		}
 	}
 	
 	if (!Array.isArray(obj.questions) || obj.questions.length === 0) {

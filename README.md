@@ -23,6 +23,7 @@ The tool is automatically discovered on next pi session. No build step required.
 
 ## Features
 
+- **Voice Mode**: Natural voice interviewing via ElevenLabs (questions read aloud, answers via speech)
 - **Question Types**: Single-select, multi-select, text input, and image upload
 - **"Other" Option**: Single/multi select questions support custom text input
 - **Per-Question Attachments**: Attach images to any question via button, paste, or drag & drop

@@ -53,6 +53,33 @@
 ## 2026-01-01
 
 ### Added
+- **Voice interview mode**: Natural voice-based interviewing powered by ElevenLabs Conversational AI
+  - Questions read aloud, answers captured via speech
+  - Bidirectional sync: click/keyboard navigate to any question, AI adapts
+  - Intelligent cycling through unanswered questions
+  - Hybrid mode: type/click anytime during voice session
+  - Visual indicators: voice-focus styling, status indicator with progress
+  - Full transcript returned with responses
+  - Activation via URL param (`?voice=true`), toggle button, or schema config
+- Voice controller state machine with WebRTC connection management
+- `window.__INTERVIEW_API__` bridge for cross-module communication
+- `getAnsweredQuestionIds()` and `getAllUnanswered()` helper functions
+- `focusQuestion()` now accepts `source` parameter ('user' | 'voice')
+- Voice-specific CSS variables in all theme files
+- ElevenLabs agent auto-creation from interview questions
+- API key input UI with localStorage persistence
+
+### Changed
+- `InterviewServerOptions` extended with `voiceApiKey`
+- `InterviewServerCallbacks.onSubmit` now accepts optional transcript
+- `InterviewDetails` extended with `transcript` field
+- `buildPayload()` includes transcript when voice mode used
+
+---
+
+## 2026-01-02
+
+### Added
 - Theme system with light/dark mode support
   - Built-in themes: `default` (monospace, IDE-style) and `tufte` (serif, book-style)
   - Mode options: `dark` (default), `light`, or `auto` (follows OS preference)
