@@ -168,10 +168,6 @@ const VoiceController = (() => {
     return API.data?.voice || {};
   }
 
-  function isVoiceAvailable(voiceConfig) {
-    return Boolean(voiceConfig && voiceConfig.apiKeyConfigured);
-  }
-
   function getNextUnansweredQuestion(afterIndex) {
     const answered = new Set(API.getAnsweredQuestionIds?.() || []);
     const questions = API.questions || [];
@@ -508,7 +504,6 @@ const VoiceController = (() => {
 
   function init() {
     const voiceConfig = getVoiceConfig();
-    if (!isVoiceAvailable(voiceConfig)) return;
 
     if (ui.toggle) {
       ui.toggle.classList.remove("hidden");
