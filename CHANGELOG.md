@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Migrated from `~/.pi/agent/tools/` to `~/.pi/agent/extensions/` folder structure (pi-mono v0.35.0)
+- Updated to new extension API: `CustomToolFactory` -> `ExtensionAPI` with `pi.registerTool()`
+
+---
+
 ## 2026-01-02
 
 ### Added
@@ -42,7 +50,7 @@
 
 ---
 
-## Unreleased
+## 2026-01-01
 
 ### Added
 - Theme system with light/dark mode support

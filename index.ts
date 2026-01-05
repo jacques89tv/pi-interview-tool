@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
-import type { CustomTool, CustomToolFactory, CustomToolAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -19,7 +19,7 @@ function formatTimeAgo(timestamp: number): string {
 	return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
 }
 
-async function openUrl(pi: CustomToolAPI, url: string, browser?: string): Promise<void> {
+async function openUrl(pi: ExtensionAPI, url: string, browser?: string): Promise<void> {
 	const platform = os.platform();
 	let result;
 	if (platform === "darwin") {
@@ -161,8 +161,8 @@ function formatResponses(responses: ResponseItem[]): string {
 		.join("\n");
 }
 
-const factory: CustomToolFactory = (pi) => {
-	const tool: CustomTool<typeof InterviewParams, InterviewDetails> = {
+export default function (pi: ExtensionAPI) {
+	pi.registerTool({
 		name: "interview",
 		label: "Interview",
 		description:
@@ -366,9 +366,5 @@ const factory: CustomToolFactory = (pi) => {
 			const line = `${details.status.toUpperCase()} (${details.responses.length} responses)`;
 			return new Text(theme.fg(statusColor, line), 0, 0);
 		},
-	};
-
-	return tool;
-};
-
-export default factory;
+	});
+}
