@@ -15,7 +15,6 @@ export interface QuestionsFile {
 }
 
 export interface VoiceConfig {
-	enabled?: boolean;
 	greeting?: string;
 	closing?: string;
 }
@@ -40,9 +39,6 @@ function validateBasicStructure(data: unknown): QuestionsFile {
 			throw new Error("Invalid questions file: voice must be an object");
 		}
 		const voice = obj.voice as Record<string, unknown>;
-		if (voice.enabled !== undefined && typeof voice.enabled !== "boolean") {
-			throw new Error("Invalid questions file: voice.enabled must be a boolean");
-		}
 		if (voice.greeting !== undefined && typeof voice.greeting !== "string") {
 			throw new Error("Invalid questions file: voice.greeting must be a string");
 		}

@@ -60,6 +60,7 @@ interface InterviewSettings {
 	theme?: InterviewThemeSettings;
 	voice?: {
 		apiKey?: string;
+		autoStart?: boolean;
 	};
 }
 
@@ -79,6 +80,9 @@ const InterviewParams = Type.Object({
 		Type.Number({ description: "Seconds before auto-timeout", default: 600 })
 	),
 	verbose: Type.Optional(Type.Boolean({ description: "Enable debug logging", default: false })),
+	voice: Type.Optional(
+		Type.Boolean({ description: "Enable voice auto-start (persists to settings)" })
+	),
 	theme: Type.Optional(
 		Type.Object(
 			{
@@ -93,14 +97,33 @@ const InterviewParams = Type.Object({
 	),
 });
 
+const SETTINGS_PATH = path.join(os.homedir(), ".pi/agent/settings.json");
+
 function getSettings(): InterviewSettings {
-	const settingsPath = path.join(os.homedir(), ".pi/agent/settings.json");
 	try {
-		const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+		const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
 		return (settings.interview as InterviewSettings) ?? {};
 	} catch {
 		return {};
 	}
+}
+
+function updateVoiceAutoStart(autoStart: boolean): void {
+	let settings: Record<string, unknown> = {};
+	try {
+		settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
+	} catch {}
+	if (!settings.interview) {
+		settings.interview = {};
+	}
+	const interview = settings.interview as Record<string, unknown>;
+	if (!interview.voice) {
+		interview.voice = {};
+	}
+	const voice = interview.voice as Record<string, unknown>;
+	voice.autoStart = autoStart;
+	fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
+	fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 }
 
 function expandHome(value: string): string {
@@ -174,10 +197,11 @@ export default function (pi: ExtensionAPI) {
 		parameters: InterviewParams,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
-			const { questions, timeout, verbose, theme } = params as {
+			const { questions, timeout, verbose, voice, theme } = params as {
 				questions: string;
 				timeout?: number;
 				verbose?: boolean;
+				voice?: boolean;
 				theme?: InterviewThemeSettings;
 			};
 
@@ -200,6 +224,11 @@ export default function (pi: ExtensionAPI) {
 			const themeConfig = mergeThemeConfig(settings.theme, theme, pi.cwd);
 			const questionsData = loadQuestions(questions, pi.cwd);
 			const voiceApiKey = settings.voice?.apiKey;
+
+			if (voice !== undefined) {
+				updateVoiceAutoStart(voice);
+			}
+			const voiceAutoStart = voice ?? settings.voice?.autoStart ?? false;
 
 			if (signal?.aborted) {
 				return {
@@ -267,6 +296,7 @@ export default function (pi: ExtensionAPI) {
 						verbose,
 						theme: themeConfig,
 						voiceApiKey,
+						voiceAutoStart,
 					},
 					{
 						onSubmit: (responses, transcript) => finish("completed", responses, undefined, transcript),

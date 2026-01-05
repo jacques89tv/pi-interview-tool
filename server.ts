@@ -193,6 +193,7 @@ export interface InterviewServerOptions {
 	verbose?: boolean;
 	theme?: InterviewThemeConfig;
 	voiceApiKey?: string;
+	voiceAutoStart?: boolean;
 }
 
 export interface InterviewServerCallbacks {
@@ -387,7 +388,7 @@ export async function startInterviewServer(
 	options: InterviewServerOptions,
 	callbacks: InterviewServerCallbacks
 ): Promise<InterviewServerHandle> {
-	const { questions, sessionToken, sessionId, cwd, timeout, verbose, voiceApiKey } = options;
+	const { questions, sessionToken, sessionId, cwd, timeout, verbose, voiceApiKey, voiceAutoStart } = options;
 	const questionById = new Map<string, Question>();
 	for (const question of questions.questions) {
 		questionById.set(question.id, question);
@@ -478,9 +479,10 @@ export async function startInterviewServer(
 						toggleHotkey: themeConfig.toggleHotkey,
 					},
 					voice: {
-						enabled: questions.voice?.enabled ?? false,
-						urlParam: url.searchParams.get("voice") === "true",
+						autoStart: voiceAutoStart ?? false,
 						apiKeyConfigured: !!voiceApiKey,
+						greeting: questions.voice?.greeting,
+						closing: questions.voice?.closing,
 					},
 				});
 				const html = TEMPLATE
@@ -502,10 +504,6 @@ export async function startInterviewServer(
 
 			if (method === "GET" && url.pathname === "/voice/status") {
 				if (!validateTokenQuery(url, sessionToken, res)) return;
-				if (questions.voice?.enabled === false) {
-					sendJson(res, 200, { ok: true, available: false, reason: "Voice disabled for this interview." });
-					return;
-				}
 				sendJson(res, 200, {
 					ok: true,
 					available: !!voiceApiKey,
@@ -601,10 +599,6 @@ export async function startInterviewServer(
 				});
 				if (!body) return;
 				if (!validateTokenBody(body, sessionToken, res)) return;
-				if (questions.voice?.enabled === false) {
-					sendJson(res, 400, { ok: false, error: "Voice is disabled for this interview." });
-					return;
-				}
 
 				const payload = body as { apiKey?: string };
 				const apiKey = (payload.apiKey && typeof payload.apiKey === "string" ? payload.apiKey : null) || voiceApiKey;

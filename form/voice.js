@@ -168,8 +168,8 @@ const VoiceController = (() => {
     return API.data?.voice || {};
   }
 
-  function isVoiceEnabled(voiceConfig) {
-    return Boolean(voiceConfig && voiceConfig.enabled);
+  function isVoiceAvailable(voiceConfig) {
+    return Boolean(voiceConfig && voiceConfig.apiKeyConfigured);
   }
 
   function getNextUnansweredQuestion(afterIndex) {
@@ -398,9 +398,6 @@ const VoiceController = (() => {
 
   async function start() {
     const voiceConfig = getVoiceConfig();
-    if (!isVoiceEnabled(voiceConfig)) {
-      return;
-    }
     let apiKey = getStoredApiKey();
     if (!voiceConfig.apiKeyConfigured && !apiKey) {
       if (state === STATE.error) {
@@ -511,9 +508,9 @@ const VoiceController = (() => {
 
   function init() {
     const voiceConfig = getVoiceConfig();
-    if (!isVoiceEnabled(voiceConfig)) return;
+    if (!isVoiceAvailable(voiceConfig)) return;
 
-    if (ui.toggle && (voiceConfig.enabled || voiceConfig.urlParam)) {
+    if (ui.toggle) {
       ui.toggle.classList.remove("hidden");
       ui.toggle.addEventListener("click", toggle);
     }
@@ -552,12 +549,8 @@ const VoiceController = (() => {
       conversation?.sendUserActivity?.();
     });
 
-    if (voiceConfig.urlParam) {
-      if (voiceConfig.apiKeyConfigured || getStoredApiKey()) {
-        start();
-      } else {
-        showApiKeyModal();
-      }
+    if (voiceConfig.autoStart) {
+      start();
     }
   }
 
