@@ -158,12 +158,6 @@ const VoiceController = (() => {
     } catch (_err) {}
   }
 
-  function clearApiKey() {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch (_err) {}
-  }
-
   function getVoiceConfig() {
     return API.data?.voice || {};
   }
@@ -377,7 +371,7 @@ const VoiceController = (() => {
         message = `[FORM_UPDATE: Question ${event.questionId} answered with "${event.value}"]`;
         break;
       case "sync_state":
-        const unanswered = API.getAllUnanswered();
+        const unanswered = API.getAllUnanswered?.() || [];
         if (unanswered.length === 0) {
           message = "[FORM_STATE: 0 remaining]";
         } else {
@@ -440,7 +434,8 @@ const VoiceController = (() => {
         return;
       }
 
-      const firstUnanswered = API.getAllUnanswered()[0];
+      const allUnanswered = API.getAllUnanswered?.() || [];
+      const firstUnanswered = allUnanswered[0];
       if (firstUnanswered) {
         setCurrentQuestion(firstUnanswered.index);
       } else {
@@ -462,6 +457,7 @@ const VoiceController = (() => {
         onMessage: handleMessage,
         onError: () => {
           if (sessionId !== sessionCounter) return;
+          conversation = null;
           setState(STATE.error);
         },
         onModeChange: (mode) => {
