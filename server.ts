@@ -7,7 +7,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { Question, QuestionsFile } from "./schema.js";
-import { createVoiceAgent } from "./elevenlabs.js";
+import { createVoiceAgent, fetchVoices, type VoiceInfo } from "./elevenlabs.js";
+import { loadSettings, updateVoiceSettings } from "./settings.js";
 
 function getGitBranch(cwd: string): string | null {
 	try {
@@ -235,6 +236,12 @@ const SCRIPT = readFileSync(join(FORM_DIR, "script.js"), "utf-8");
 const VOICE_SCRIPT = existsSync(join(FORM_DIR, "voice.js"))
 	? readFileSync(join(FORM_DIR, "voice.js"), "utf-8")
 	: null;
+const SETTINGS_SCRIPT = existsSync(join(FORM_DIR, "settings.js"))
+	? readFileSync(join(FORM_DIR, "settings.js"), "utf-8")
+	: "";
+
+let voicesCache: { voices: VoiceInfo[]; timestamp: number } | null = null;
+const VOICE_CACHE_TTL_MS = 5 * 60 * 1000;
 const THEMES_DIR = join(FORM_DIR, "themes");
 const BUILTIN_THEMES = new Map<string, { light: string; dark: string }>([
 	[
@@ -464,6 +471,7 @@ export async function startInterviewServer(
 			if (method === "GET" && url.pathname === "/") {
 				if (!validateTokenQuery(url, sessionToken, res)) return;
 				touchHeartbeat();
+				const settings = loadSettings();
 				const inlineData = safeInlineJSON({
 					questions: questions.questions,
 					title: questions.title,
@@ -481,6 +489,7 @@ export async function startInterviewServer(
 					voice: {
 						autoStart: voiceAutoStart ?? false,
 						apiKeyConfigured: !!voiceApiKey,
+						volume: settings.voice?.volume ?? 0.7,
 						greeting: questions.voice?.greeting,
 						closing: questions.voice?.closing,
 					},
@@ -576,6 +585,78 @@ export async function startInterviewServer(
 				return;
 			}
 
+			if (method === "GET" && url.pathname === "/settings.js") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+				res.writeHead(200, {
+					"Content-Type": "application/javascript; charset=utf-8",
+					"Cache-Control": "no-store",
+				});
+				res.end(SETTINGS_SCRIPT);
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/settings/voices") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+
+				if (!voiceApiKey) {
+					sendJson(res, 400, { ok: false, error: "Voice API key not configured" });
+					return;
+				}
+
+				try {
+					const now = Date.now();
+					if (voicesCache && now - voicesCache.timestamp < VOICE_CACHE_TTL_MS) {
+						sendJson(res, 200, { ok: true, voices: voicesCache.voices });
+						return;
+					}
+
+					const voices = await fetchVoices(voiceApiKey);
+					voicesCache = { voices, timestamp: now };
+					sendJson(res, 200, { ok: true, voices });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : "Failed to fetch voices";
+					sendJson(res, 500, { ok: false, error: message });
+				}
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/settings") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+
+				const currentSettings = loadSettings();
+				sendJson(res, 200, {
+					ok: true,
+					settings: {
+						voiceId: currentSettings.voice?.voiceId || "",
+						volume: currentSettings.voice?.volume ?? 0.7,
+					},
+				});
+				return;
+			}
+
+			if (method === "POST" && url.pathname === "/settings") {
+				const body = await parseJSONBody(req).catch(() => null);
+				if (!body) {
+					sendJson(res, 400, { ok: false, error: "Invalid body" });
+					return;
+				}
+				if (!validateTokenBody(body, sessionToken, res)) return;
+
+				const payload = body as { voiceId?: string; volume?: number };
+
+				try {
+					updateVoiceSettings({
+						voiceId: payload.voiceId,
+						volume: payload.volume,
+					});
+					sendJson(res, 200, { ok: true });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : "Failed to save settings";
+					sendJson(res, 500, { ok: false, error: message });
+				}
+				return;
+			}
+
 			if (method === "POST" && url.pathname === "/heartbeat") {
 				const body = await parseJSONBody(req).catch(() => null);
 				if (!body) {
@@ -608,10 +689,12 @@ export async function startInterviewServer(
 				}
 
 				try {
+					const currentSettings = loadSettings();
 					const { agentId, signedUrl } = await createVoiceAgent({
 						apiKey,
 						questions,
 						sessionId,
+						voiceId: currentSettings.voice?.voiceId,
 					});
 					sendJson(res, 200, { ok: true, agentId, signedUrl });
 				} catch (err) {

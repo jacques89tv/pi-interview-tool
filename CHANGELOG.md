@@ -2,9 +2,21 @@
 
 ## Unreleased
 
+### Added
+- **Interview Settings Modal**: Gear icon button in header opens settings dialog
+  - Voice selection dropdown populated from ElevenLabs API (with 5-minute cache)
+  - Voice preview button to hear samples before selecting
+  - Volume slider with percentage display (persists to settings.json)
+  - Inline volume control in voice indicator for quick mid-conversation adjustment
+  - Focus trap for accessibility (Tab/Shift+Tab cycling)
+  - Auto-restart voice session when voice changes
+- Shared settings module (`settings.ts`) for consistent settings access across tool and server
+- Volume passed in inline page data to eliminate async initialization race condition
+
 ### Changed
 - Migrated from `~/.pi/agent/tools/` to `~/.pi/agent/extensions/` folder structure (pi-mono v0.35.0)
 - Updated to new extension API: `CustomToolFactory` -> `ExtensionAPI` with `pi.registerTool()`
+- Voice agent creation now uses configured voiceId from settings (default: Rachel)
 
 ---
 

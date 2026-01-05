@@ -1,13 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { startInterviewServer, getActiveSessions, type ResponseItem, type TranscriptEntry } from "./server.js";
 import { validateQuestions, type QuestionsFile } from "./schema.js";
+import { loadSettings, updateVoiceSettings, type InterviewSettings, type InterviewThemeSettings } from "./settings.js";
 
 function formatTimeAgo(timestamp: number): string {
 	const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -54,26 +55,6 @@ interface InterviewDetails {
 	transcript?: TranscriptEntry[];
 }
 
-interface InterviewSettings {
-	browser?: string;
-	timeout?: number;
-	theme?: InterviewThemeSettings;
-	voice?: {
-		apiKey?: string;
-		autoStart?: boolean;
-	};
-}
-
-type ThemeMode = "auto" | "light" | "dark";
-
-interface InterviewThemeSettings {
-	mode?: ThemeMode;
-	name?: string;
-	lightPath?: string;
-	darkPath?: string;
-	toggleHotkey?: string;
-}
-
 const InterviewParams = Type.Object({
 	questions: Type.String({ description: "Path to questions JSON file" }),
 	timeout: Type.Optional(
@@ -97,34 +78,7 @@ const InterviewParams = Type.Object({
 	),
 });
 
-const SETTINGS_PATH = path.join(os.homedir(), ".pi/agent/settings.json");
 
-function getSettings(): InterviewSettings {
-	try {
-		const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
-		return (settings.interview as InterviewSettings) ?? {};
-	} catch {
-		return {};
-	}
-}
-
-function updateVoiceAutoStart(autoStart: boolean): void {
-	let settings: Record<string, unknown> = {};
-	try {
-		settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
-	} catch {}
-	if (!settings.interview) {
-		settings.interview = {};
-	}
-	const interview = settings.interview as Record<string, unknown>;
-	if (!interview.voice) {
-		interview.voice = {};
-	}
-	const voice = interview.voice as Record<string, unknown>;
-	voice.autoStart = autoStart;
-	fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
-	fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
-}
 
 function expandHome(value: string): string {
 	if (value.startsWith("~" + path.sep)) {
@@ -219,14 +173,14 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			const settings = getSettings();
+			const settings = loadSettings();
 			const timeoutSeconds = timeout ?? settings.timeout ?? 600;
 			const themeConfig = mergeThemeConfig(settings.theme, theme, pi.cwd);
 			const questionsData = loadQuestions(questions, pi.cwd);
 			const voiceApiKey = settings.voice?.apiKey;
 
 			if (voice !== undefined) {
-				updateVoiceAutoStart(voice);
+				updateVoiceSettings({ autoStart: voice });
 			}
 			const voiceAutoStart = voice ?? settings.voice?.autoStart ?? false;
 

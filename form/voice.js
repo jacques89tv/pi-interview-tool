@@ -13,6 +13,9 @@ const VoiceController = (() => {
       getTranscript() { return []; },
       navigateToQuestion() {},
       updateFormFromVoice() {},
+      setVolume() {},
+      getVolume() { return 0.7; },
+      restart() {},
     };
   }
 
@@ -53,6 +56,7 @@ const VoiceController = (() => {
   let currentVoiceQuestion = null;
   let sessionCounter = 0;
   let isToggling = false;
+  let currentVolume = 0.7;
 
   const STORAGE_KEY = "pi-interview-voice-apikey";
 
@@ -448,6 +452,7 @@ const VoiceController = (() => {
         onConnect: () => {
           if (sessionId !== sessionCounter) return;
           setState(STATE.listening);
+          setVolume(currentVolume);
           injectContext({ type: "sync_state" });
         },
         onDisconnect: () => {
@@ -495,6 +500,27 @@ const VoiceController = (() => {
     setState(STATE.idle);
   }
 
+  function setVolume(volume) {
+    currentVolume = Math.max(0, Math.min(1, volume));
+    if (conversation) {
+      try {
+        if (typeof conversation.setVolume === "function") {
+          conversation.setVolume({ volume: currentVolume });
+        }
+      } catch (_err) {}
+    }
+  }
+
+  function getVolume() {
+    return currentVolume;
+  }
+
+  async function restart() {
+    if (!isActive()) return;
+    await stop();
+    await start();
+  }
+
   async function toggle() {
     if (isToggling) return;
     isToggling = true;
@@ -511,6 +537,8 @@ const VoiceController = (() => {
 
   function init() {
     const voiceConfig = getVoiceConfig();
+
+    currentVolume = voiceConfig.volume ?? 0.7;
 
     if (ui.toggle) {
       ui.toggle.classList.remove("hidden");
@@ -572,6 +600,9 @@ const VoiceController = (() => {
     navigateToQuestion,
     updateFormFromVoice,
     syncCurrentQuestion,
+    setVolume,
+    getVolume,
+    restart,
   };
 })();
 

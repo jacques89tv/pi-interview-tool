@@ -1,6 +1,30 @@
 import type { QuestionsFile } from "./schema.js";
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+
+export interface VoiceInfo {
+	voice_id: string;
+	name: string;
+	category: string;
+	preview_url: string;
+}
+
+export async function fetchVoices(apiKey: string): Promise<VoiceInfo[]> {
+	const response = await fetch(`${ELEVENLABS_API_BASE}/voices`, {
+		headers: { "xi-api-key": apiKey },
+	});
+	if (!response.ok) {
+		throw new Error(`Failed to fetch voices: ${response.status}`);
+	}
+	const data = await response.json();
+	return data.voices.map((v: Record<string, unknown>) => ({
+		voice_id: v.voice_id,
+		name: v.name,
+		category: v.category || "premade",
+		preview_url: v.preview_url,
+	}));
+}
 
 function buildQuestionList(questions: QuestionsFile): string {
 	return questions.questions
@@ -59,11 +83,13 @@ export async function createVoiceAgent(options: {
 	apiKey: string;
 	questions: QuestionsFile;
 	sessionId: string;
+	voiceId?: string;
 }): Promise<{ agentId: string; signedUrl: string }> {
-	const { apiKey, questions, sessionId } = options;
+	const { apiKey, questions, sessionId, voiceId } = options;
 	const prompt = buildSystemPrompt(questions);
 	const greeting = questions.voice?.greeting || "Let's begin the interview.";
 	const name = questions.title ? `Interview: ${questions.title}` : `Interview ${sessionId.slice(0, 8)}`;
+	const resolvedVoiceId = voiceId || DEFAULT_VOICE_ID;
 
 	const createResponse = await fetch(`${ELEVENLABS_API_BASE}/convai/agents/create`, {
 		method: "POST",
@@ -77,6 +103,9 @@ export async function createVoiceAgent(options: {
 				agent: {
 					prompt: { prompt },
 					first_message: greeting,
+				},
+				tts: {
+					voice_id: resolvedVoiceId,
 				},
 			},
 		}),
