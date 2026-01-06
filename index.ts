@@ -159,7 +159,7 @@ export default function (pi: ExtensionAPI) {
 				theme?: InterviewThemeSettings;
 			};
 
-			if (!pi.hasUI) {
+			if (!ctx.hasUI) {
 				throw new Error(
 					"Interview tool requires interactive mode with browser support. " +
 						"Cannot run in headless/RPC/print mode."
