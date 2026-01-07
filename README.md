@@ -134,7 +134,8 @@ await interview({
 | `Enter` / `Space` | Select option |
 | `⌘+V` | Paste image or file path |
 | `⌘+Enter` | Submit form |
-| `Esc` | Show exit overlay (press twice to quit) |
+| `v` | Toggle voice mode |
+| `Esc` | Stop voice mode / Show exit overlay (press twice to quit) |
 | `⌘+Shift+L` | Toggle theme (if enabled; appears in shortcuts bar) |
 
 ## Configuration
@@ -171,6 +172,10 @@ Settings in `~/.pi/agent/settings.json`:
 | `autoStart` | Auto-start voice on form load |
 | `voiceId` | ElevenLabs voice ID (default: Rachel) |
 | `volume` | Output volume 0.0-1.0 (default: 0.7) |
+
+**ElevenLabs API key permissions**: When creating or editing your API key at [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys), enable these permissions:
+- **ElevenLabs Agents**: Write (required for creating conversational AI agents)
+- **Voices**: Read (required for voice selection in settings)
 
 Theme notes:
 - `mode`: `dark` (default), `light`, or `auto` (follows OS unless overridden)

@@ -202,7 +202,11 @@ const VoiceController = (() => {
 
   function updateFormFromVoice(questionId, value) {
     const question = API.questions.find((q) => q.id === questionId);
-    if (!question || !API.escapeSelector || !API.formEl) return;
+    if (!question || !API.escapeSelector || !API.formEl) {
+      console.log("[Voice] updateFormFromVoice: missing API", { question: !!question, escapeSelector: !!API.escapeSelector, formEl: !!API.formEl });
+      return;
+    }
+    console.log("[Voice] updateFormFromVoice:", { questionId, value, type: question.type, options: question.options });
 
     if (question.type === "single" && typeof value === "string") {
       const radios = API.formEl.querySelectorAll(
@@ -210,9 +214,9 @@ const VoiceController = (() => {
       );
       radios.forEach((r) => (r.checked = false));
       if (value !== "") {
-        const input = API.formEl.querySelector(
-          `input[name="${API.escapeSelector(questionId)}"][value="${API.escapeSelector(value)}"]`
-        );
+        const selector = `input[name="${API.escapeSelector(questionId)}"][value="${API.escapeSelector(value)}"]`;
+        const input = API.formEl.querySelector(selector);
+        console.log("[Voice] Looking for radio:", { selector, found: !!input });
         if (input) {
           input.checked = true;
         } else {
@@ -321,20 +325,24 @@ const VoiceController = (() => {
     }
 
     const answer = parseAnswerFromTranscript(currentVoiceQuestion.question, text);
+    console.log("[Voice] Parsed answer:", { text, answer, questionId: currentVoiceQuestion.question.id });
     if (answer !== null) {
       updateFormFromVoice(currentVoiceQuestion.question.id, answer);
+      injectContext({ type: "sync_state" });
+      checkAllAnswered();
     }
+  }
 
-    const next = getNextUnansweredQuestion(currentVoiceQuestion.index);
-    if (next) {
-      navigateToQuestion(next.index);
-      injectContext({
-        type: "user_navigation",
-        questionId: next.question.id,
-        questionIndex: next.index + 1,
-        questionText: next.question.question,
-        currentAnswer: API.getQuestionValue?.(next.question) || null,
-      });
+  let submitTimeout = null;
+
+  function checkAllAnswered() {
+    const unanswered = API.getAllUnanswered?.() || [];
+    if (unanswered.length === 0 && !submitTimeout) {
+      console.log("[Voice] All questions answered, will submit after AI finishes...");
+      submitTimeout = setTimeout(async () => {
+        await stop();
+        API.formEl?.requestSubmit?.();
+      }, 3000);
     }
   }
 
@@ -351,11 +359,10 @@ const VoiceController = (() => {
     const isFinal =
       message.isFinal ?? message.is_final ?? message.final ?? true;
     if (!isFinal) return;
-    const roleRaw = message.role || message.source || message.speaker || "";
-    const role =
-      roleRaw === "user" || roleRaw === "human" || roleRaw === "speaker"
-        ? "user"
-        : "ai";
+    const roleRaw = String(message.role || message.source || message.speaker || "").toLowerCase();
+    const isUser = ["user", "human", "speaker", "customer", "client"].includes(roleRaw);
+    const role = isUser ? "user" : "ai";
+    console.log("[Voice] Message:", { role, roleRaw, text: text.slice(0, 100) });
     transcript.push({ role, text, timestamp: Date.now() });
     if (role === "user") {
       handleUserTranscript(text);
@@ -491,6 +498,10 @@ const VoiceController = (() => {
   }
 
   async function stop() {
+    if (submitTimeout) {
+      clearTimeout(submitTimeout);
+      submitTimeout = null;
+    }
     if (conversation) {
       try {
         await conversation.endSession();
@@ -548,8 +559,17 @@ const VoiceController = (() => {
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         if (ui.apiKeyModal && !ui.apiKeyModal.classList.contains("hidden")) {
+          event.preventDefault();
+          event.stopPropagation();
           hideApiKeyModal();
           setState(STATE.idle);
+          return;
+        }
+        if (isActive()) {
+          event.preventDefault();
+          event.stopPropagation();
+          stop();
+          return;
         }
         return;
       }

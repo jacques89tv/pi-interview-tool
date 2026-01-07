@@ -10,13 +10,25 @@
   - Inline volume control in voice indicator for quick mid-conversation adjustment
   - Focus trap for accessibility (Tab/Shift+Tab cycling)
   - Auto-restart voice session when voice changes
+- **Light markdown in questions**: Question titles and context now render `**bold**`, `` `code` ``, and auto-break numbered lists
+- **Voice auto-submit**: Form automatically submits after all questions answered (3s delay)
+- **Voice stop via Escape**: Press Escape key to stop voice mode
 - Shared settings module (`settings.ts`) for consistent settings access across tool and server
 - Volume passed in inline page data to eliminate async initialization race condition
+- ElevenLabs API key permissions documented in README
 
 ### Changed
 - Migrated from `~/.pi/agent/tools/` to `~/.pi/agent/extensions/` folder structure (pi-mono v0.35.0)
 - Updated to new extension API: `CustomToolFactory` -> `ExtensionAPI` with `pi.registerTool()`
 - Voice agent creation now uses configured voiceId from settings (default: Rachel)
+- Voice mode no longer auto-advances form after capturing answer (lets AI control flow)
+- Voice agent prompt updated with patience instructions (no pushy follow-ups during silence)
+- Voice toggle icon increased from 18px to 24px
+
+### Fixed
+- Radio/checkbox alignment on multi-line option text (now aligns to top)
+- `fileInput is not defined` error in keyboard handler
+- `pi.cwd` changed to `ctx.cwd` in tool execute function
 
 ---
 

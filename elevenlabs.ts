@@ -46,6 +46,13 @@ export function buildSystemPrompt(questions: QuestionsFile): string {
 	return [
 		`You are conducting a structured interview with ${questions.questions.length} questions.`,
 		"",
+		"PACING AND PATIENCE:",
+		"- Be patient. After asking a question, wait silently for the user to respond.",
+		"- Do NOT prompt, nudge, or follow up if there is silence. The user may be thinking.",
+		"- Never say things like 'Are you still there?', 'Take your time', or 'Whenever you're ready'.",
+		"- Only speak again when the user speaks or a system event arrives.",
+		"- Keep responses concise - acknowledge answers briefly, then move on.",
+		"",
 		"ADAPTIVE BEHAVIORS:",
 		"1. When you receive a [USER_NAVIGATION] event, immediately pivot to that question.",
 		'   Acknowledge briefly: "Let\'s look at question X" then read it.',

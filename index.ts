@@ -147,7 +147,11 @@ export default function (pi: ExtensionAPI) {
 		name: "interview",
 		label: "Interview",
 		description:
-			"Present an interactive form to gather user responses to questions. Image responses and attachments are returned as file paths - use the read tool directly to display them (no need to verify with file command first).",
+			"Present an interactive form to gather user responses. " +
+			"Use proactively when: choosing between multiple approaches, gathering requirements before implementation, " +
+			"exploring design tradeoffs, or when decisions have multiple dimensions worth discussing. " +
+			"Provides better UX than back-and-forth chat for structured input. " +
+			"Image responses and attachments are returned as file paths - use read tool directly to display them.",
 		parameters: InterviewParams,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
@@ -175,8 +179,8 @@ export default function (pi: ExtensionAPI) {
 
 			const settings = loadSettings();
 			const timeoutSeconds = timeout ?? settings.timeout ?? 600;
-			const themeConfig = mergeThemeConfig(settings.theme, theme, pi.cwd);
-			const questionsData = loadQuestions(questions, pi.cwd);
+			const themeConfig = mergeThemeConfig(settings.theme, theme, ctx.cwd);
+			const questionsData = loadQuestions(questions, ctx.cwd);
 			const voiceApiKey = settings.voice?.apiKey;
 
 			if (voice !== undefined) {
@@ -245,7 +249,7 @@ export default function (pi: ExtensionAPI) {
 						questions: questionsData,
 						sessionToken,
 						sessionId,
-						cwd: pi.cwd,
+						cwd: ctx.cwd,
 						timeout: timeoutSeconds,
 						verbose,
 						theme: themeConfig,
@@ -277,13 +281,13 @@ export default function (pi: ExtensionAPI) {
 								"New interview ready:",
 								`  Title: ${questionsData.title || "Interview"}`,
 							];
-							const normalizedCwd = pi.cwd.startsWith(os.homedir())
-								? "~" + pi.cwd.slice(os.homedir().length)
-								: pi.cwd;
+							const normalizedCwd = ctx.cwd.startsWith(os.homedir())
+								? "~" + ctx.cwd.slice(os.homedir().length)
+								: ctx.cwd;
 							const gitBranch = (() => {
 								try {
 									return execSync("git rev-parse --abbrev-ref HEAD", {
-										cwd: pi.cwd,
+										cwd: ctx.cwd,
 										encoding: "utf8",
 										timeout: 2000,
 										stdio: ["pipe", "pipe", "pipe"],

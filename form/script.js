@@ -371,6 +371,19 @@
     el.textContent = text || "";
   }
 
+  function renderLightMarkdown(text) {
+    if (!text) return "";
+    let html = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/\n/g, "<br>");
+    html = html.replace(/\s(\d+\.)\s/g, "<br>$1 ");
+    return html;
+  }
+
   function isPrintableKey(event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
     return event.key.length === 1;
@@ -1074,7 +1087,7 @@
       return;
     }
     
-    if (fileInput && document.activeElement === fileInput) {
+    if (document.activeElement?.type === 'file') {
       if (event.key === 'Enter' || event.key === ' ') {
         return;
       }
@@ -1129,13 +1142,13 @@
     const title = document.createElement("h2");
     title.className = "question-title";
     title.id = `q-${question.id}-title`;
-    title.textContent = `${index + 1}. ${question.question}`;
+    title.innerHTML = `${index + 1}. ${renderLightMarkdown(question.question)}`;
     card.appendChild(title);
 
     if (question.context) {
       const context = document.createElement("p");
       context.className = "question-context";
-      context.textContent = question.context;
+      context.innerHTML = renderLightMarkdown(question.context);
       card.appendChild(context);
     }
 
