@@ -412,19 +412,6 @@ const VoiceController = (() => {
     if (!setState(STATE.connecting)) return;
     const sessionId = ++sessionCounter;
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setState(STATE.error);
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-    } catch (_err) {
-      setState(STATE.error);
-      return;
-    }
-
     try {
       const response = await fetch("/voice/init", {
         method: "POST",

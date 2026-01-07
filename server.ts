@@ -191,6 +191,7 @@ export interface InterviewServerOptions {
 	sessionId: string;
 	cwd: string;
 	timeout: number;
+	port?: number;
 	verbose?: boolean;
 	theme?: InterviewThemeConfig;
 	voiceApiKey?: string;
@@ -395,7 +396,7 @@ export async function startInterviewServer(
 	options: InterviewServerOptions,
 	callbacks: InterviewServerCallbacks
 ): Promise<InterviewServerHandle> {
-	const { questions, sessionToken, sessionId, cwd, timeout, verbose, voiceApiKey, voiceAutoStart } = options;
+	const { questions, sessionToken, sessionId, cwd, timeout, port, verbose, voiceApiKey, voiceAutoStart } = options;
 	const questionById = new Map<string, Question>();
 	for (const question of questions.questions) {
 		questionById.set(question.id, question);
@@ -894,7 +895,7 @@ export async function startInterviewServer(
 		};
 
 		server.once("error", onError);
-		server.listen(0, "127.0.0.1", () => {
+		server.listen(port ?? 0, "127.0.0.1", () => {
 			server.off("error", onError);
 			const addr = server.address();
 			if (!addr || typeof addr === "string") {

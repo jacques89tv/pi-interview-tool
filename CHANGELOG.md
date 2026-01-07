@@ -13,6 +13,7 @@
 - **Light markdown in questions**: Question titles and context now render `**bold**`, `` `code` ``, and auto-break numbered lists
 - **Voice auto-submit**: Form automatically submits after all questions answered (3s delay)
 - **Voice stop via Escape**: Press Escape key to stop voice mode
+- **Fixed port setting**: Configure `port` in settings to persist browser permissions (microphone) across sessions
 - Shared settings module (`settings.ts`) for consistent settings access across tool and server
 - Volume passed in inline page data to eliminate async initialization race condition
 - ElevenLabs API key permissions documented in README
@@ -29,6 +30,7 @@
 - Radio/checkbox alignment on multi-line option text (now aligns to top)
 - `fileInput is not defined` error in keyboard handler
 - `pi.cwd` changed to `ctx.cwd` in tool execute function
+- Removed redundant microphone permission pre-check (ElevenLabs SDK handles it)
 
 ---
 

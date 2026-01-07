@@ -146,6 +146,7 @@ Settings in `~/.pi/agent/settings.json`:
 {
   "interview": {
     "timeout": 600,
+    "port": 19847,
     "theme": {
       "mode": "auto",
       "name": "default",
@@ -155,7 +156,7 @@ Settings in `~/.pi/agent/settings.json`:
     },
     "voice": {
       "apiKey": "sk-your-elevenlabs-key",
-      "autoStart": false,
+      "autoStart": true,
       "voiceId": "21m00Tcm4TlvDq8ikWAM",
       "volume": 0.7
     }
@@ -164,6 +165,8 @@ Settings in `~/.pi/agent/settings.json`:
 ```
 
 **Timeout precedence**: params > settings > default (600s)
+
+**Port setting**: Set a fixed `port` (e.g., `19847`) to persist browser permissions (microphone) across sessions. Without this, each interview runs on a random port and permissions must be re-granted.
 
 **Voice settings**:
 | Field | Description |

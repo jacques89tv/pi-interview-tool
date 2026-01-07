@@ -22,6 +22,7 @@ export interface InterviewThemeSettings {
 export interface InterviewSettings {
 	browser?: string;
 	timeout?: number;
+	port?: number;
 	theme?: InterviewThemeSettings;
 	voice?: InterviewVoiceSettings;
 }

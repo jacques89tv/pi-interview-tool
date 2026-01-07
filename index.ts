@@ -251,6 +251,7 @@ export default function (pi: ExtensionAPI) {
 						sessionId,
 						cwd: ctx.cwd,
 						timeout: timeoutSeconds,
+						port: settings.port,
 						verbose,
 						theme: themeConfig,
 						voiceApiKey,
