@@ -151,7 +151,9 @@ export default function (pi: ExtensionAPI) {
 			"Use proactively when: choosing between multiple approaches, gathering requirements before implementation, " +
 			"exploring design tradeoffs, or when decisions have multiple dimensions worth discussing. " +
 			"Provides better UX than back-and-forth chat for structured input. " +
-			"Image responses and attachments are returned as file paths - use read tool directly to display them.",
+			"Image responses and attachments are returned as file paths - use read tool directly to display them. " +
+			'Questions JSON format: { "title": "...", "questions": [{ "id": "q1", "type": "single|multi|text|image", "question": "...", "options": ["A", "B"] }] }. ' +
+			"Options must be plain strings (not objects). Types: single (radio), multi (checkbox), text (textarea), image (file upload).",
 		parameters: InterviewParams,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
