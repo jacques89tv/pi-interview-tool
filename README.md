@@ -23,7 +23,7 @@ The tool is automatically discovered on next pi session. No build step required.
 
 ## Features
 
-- **Voice Mode**: Natural voice interviewing via ElevenLabs (questions read aloud, answers via speech)
+- **Voice Mode** *(experimental)*: Natural voice interviewing via ElevenLabs (questions read aloud, answers via speech)
 - **Voice Settings**: Select voice, adjust volume, preview voices via settings modal
 - **Question Types**: Single-select, multi-select, text input, and image upload
 - **"Other" Option**: Single/multi select questions support custom text input
@@ -168,7 +168,7 @@ Settings in `~/.pi/agent/settings.json`:
 
 **Port setting**: Set a fixed `port` (e.g., `19847`) to persist browser permissions (microphone) across sessions. Without this, each interview runs on a random port and permissions must be re-granted.
 
-**Voice settings**:
+**Voice settings** *(experimental — not fully tested)*:
 | Field | Description |
 |-------|-------------|
 | `apiKey` | ElevenLabs API key (server-side, never sent to client) |

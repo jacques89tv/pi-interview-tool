@@ -612,6 +612,7 @@
             fileState.delete(questionId);
             manager.render(questionId);
             onUpdate();
+            notifyAnswerUpdate(questionId);
           });
 
           item.appendChild(img);
@@ -639,6 +640,7 @@
             if (idx > -1) arr.splice(idx, 1);
             manager.render(questionId);
             onUpdate();
+            notifyAnswerUpdate(questionId);
           });
 
           item.appendChild(pathText);
@@ -1287,7 +1289,6 @@
         setTimeout(() => { filePickerOpen = false; }, 200);
         clearGlobalError();
         handleFileChange(question.id, input, questionImages, {
-          checkLimit: true,
           onEmpty: () => clearImage(question.id),
         });
       });
@@ -1544,10 +1545,11 @@
     if (input) input.value = "";
     questionImages.removeFile(id);
     setFieldError(id, "");
+    notifyAnswerUpdate(id);
   }
 
   async function handleFileChange(questionId, input, manager, options = {}) {
-    const { checkLimit, onEmpty } = options;
+    const { onEmpty } = options;
     setFieldError(questionId, "");
 
     const file = input.files && input.files[0];
@@ -1557,7 +1559,7 @@
       return;
     }
 
-    if (checkLimit && countImages(questionId) + 1 > MAX_IMAGES) {
+    if (countUploadedFiles(questionId) + 1 > MAX_IMAGES) {
       setFieldError(questionId, `Only ${MAX_IMAGES} images allowed.`);
       input.value = "";
       return;
@@ -1611,11 +1613,9 @@
   }
 
   async function addPastedImage(question, file) {
-    if (question.type === "image") {
-      if (countImages(question.id) + 1 > MAX_IMAGES) {
-        setFieldError(question.id, `Only ${MAX_IMAGES} images allowed.`);
-        return;
-      }
+    if (countUploadedFiles(question.id) + 1 > MAX_IMAGES) {
+      setFieldError(question.id, `Only ${MAX_IMAGES} images allowed.`);
+      return;
     }
 
     try {
@@ -1636,6 +1636,7 @@
       revealAttachmentArea(question.id);
       attachments.addFile(question.id, file);
     }
+    notifyAnswerUpdate(question.id);
   }
 
   function handlePaste(event) {
@@ -1658,11 +1659,15 @@
     }
 
     const text = clipboard.getData("text/plain")?.trim();
-    if (text && (text.startsWith("/") || text.startsWith("~") || text.match(/^[a-zA-Z]:\\/))) {
+    const isPathLike = text && (text.startsWith("/") || text.startsWith("~") || text.match(/^[a-zA-Z]:\\/));
+    const hasImageExtension = text && /\.(png|jpe?g|gif|webp)$/i.test(text);
+    
+    if (isPathLike && hasImageExtension) {
       event.preventDefault();
       const normalizedPath = normalizePath(text);
       if (context.question.type === "image") {
         questionImages.addPath(context.question.id, normalizedPath);
+        notifyAnswerUpdate(context.question.id);
       } else {
         revealAttachmentArea(context.question.id);
         attachments.addPath(context.question.id, normalizedPath);
@@ -1670,9 +1675,12 @@
     }
   }
 
-  function countImages(excludingId) {
+  function countUploadedFiles(excludingId) {
     let count = 0;
     imageState.forEach((_value, key) => {
+      if (key !== excludingId) count += 1;
+    });
+    attachState.forEach((_value, key) => {
       if (key !== excludingId) count += 1;
     });
     return count;

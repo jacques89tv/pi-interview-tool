@@ -19,6 +19,7 @@
 - ElevenLabs API key permissions documented in README
 
 ### Changed
+- Voice mode marked as experimental in README and settings modal
 - Migrated from `~/.pi/agent/tools/` to `~/.pi/agent/extensions/` folder structure (pi-mono v0.35.0)
 - Updated to new extension API: `CustomToolFactory` -> `ExtensionAPI` with `pi.registerTool()`
 - Voice agent creation now uses configured voiceId from settings (default: Rachel)
@@ -31,6 +32,11 @@
 - `fileInput is not defined` error in keyboard handler
 - `pi.cwd` changed to `ctx.cwd` in tool execute function
 - Removed redundant microphone permission pre-check (ElevenLabs SDK handles it)
+- **Paste handling**: Regular text no longer intercepted as image attachment; only paths ending with image extensions (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) are treated as attachments
+- **Image limit enforcement**: `MAX_IMAGES` limit now consistently enforced for both question images and attachments (was only checking question images)
+- **Voice mode sync**: Pasted/dropped images and removed images now properly notify voice controller
+  - Added `notifyAnswerUpdate` to `addPastedImage`, paste handler for paths, `clearImage`, and remove button handlers
+  - Voice mode now correctly tracks answered/unanswered state after image operations
 
 ---
 

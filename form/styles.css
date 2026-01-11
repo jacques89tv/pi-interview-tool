@@ -1562,6 +1562,14 @@ button {
   font-weight: 600;
 }
 
+.settings-experimental {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  color: var(--warning);
+  font-size: 10px;
+}
+
 .settings-row {
   display: flex;
   justify-content: space-between;
