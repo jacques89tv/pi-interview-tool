@@ -1,0 +1,7 @@
+# Development files
+*.mp4
+test-*.json
+example-*.json
+CHANGELOG.md
+.git/
+.gitignore
