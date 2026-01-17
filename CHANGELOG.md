@@ -1,6 +1,20 @@
 # Changelog
 
-## 2026-01-17
+## 0.3.1 - 2026-01-17
+
+### Changed
+- **Other input**: Changed from single-line text input to auto-growing textarea with line wrapping
+
+### Fixed
+- **Overflow layout bug**: Code blocks no longer expand beyond container and break page layout
+  - Added `min-width: 0` to flex containers to allow proper shrinking
+  - Fixed `.code-block-lines-container` to use `min-width: 100%` instead of `width: 100%`
+- **Done button alignment**: Added missing `display: flex` to `.done-item` (flex properties were being ignored)
+- **Session bar responsive margin**: Fixed 4px gap at 720px breakpoint where margin didn't match container padding
+
+---
+
+## 0.3.0 - 2026-01-17
 
 ### Added
 - **Code blocks**: Display code snippets in questions and options

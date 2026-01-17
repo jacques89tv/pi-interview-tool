@@ -1314,12 +1314,17 @@
       otherCheck.name = question.id;
       otherCheck.value = "__other__";
       otherCheck.id = `q-${question.id}-other`;
-      const otherInput = document.createElement("input");
-      otherInput.type = "text";
+      const otherInput = document.createElement("textarea");
       otherInput.className = "other-input";
       otherInput.placeholder = "Other...";
+      otherInput.rows = 1;
       otherInput.dataset.questionId = question.id;
+      const autoResizeOther = () => {
+        otherInput.style.height = "auto";
+        otherInput.style.height = otherInput.scrollHeight + "px";
+      };
       otherInput.addEventListener("input", () => {
+        autoResizeOther();
         if (otherInput.value && !otherCheck.checked) {
           otherCheck.checked = true;
           if (question.type === "multi") updateDoneState(question.id);
@@ -1861,6 +1866,7 @@
             if (otherCheck && otherInput) {
               otherCheck.checked = true;
               otherInput.value = value;
+              otherInput.dispatchEvent(new Event("input", { bubbles: true }));
             }
           }
         }
@@ -1893,6 +1899,7 @@
           if (otherCheck && otherInput) {
             otherCheck.checked = true;
             otherInput.value = otherValue;
+            otherInput.dispatchEvent(new Event("input", { bubbles: true }));
           }
         }
       }

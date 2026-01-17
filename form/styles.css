@@ -105,6 +105,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
 }
 
 .question-card {
@@ -115,6 +116,8 @@ body {
   background: var(--bg-elevated);
   transition: border-color 150ms ease, box-shadow 150ms ease;
   outline: none;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .question-card.active {
@@ -149,6 +152,7 @@ body {
 .option-list {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .option-item {
@@ -161,6 +165,7 @@ body {
   border: 1px solid transparent;
   cursor: pointer;
   transition: border-color 100ms ease, background 100ms ease;
+  min-width: 0;
 }
 
 .option-item:hover {
@@ -184,6 +189,11 @@ body {
   font-family: var(--font-ui);
   font-size: inherit;
   padding: 2px 0;
+  resize: none;
+  overflow: hidden;
+  min-height: 1.7em;
+  line-height: 1.7;
+  field-sizing: content;
 }
 
 .other-input::placeholder {
@@ -200,6 +210,7 @@ body {
   border-radius: var(--radius);
   color: var(--accent);
   background: var(--bg-card);
+  display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -1107,6 +1118,10 @@ button {
     padding: 20px;
   }
 
+  .session-bar {
+    margin: -20px -20px 16px -20px;
+  }
+
   .interview-header h1 {
     font-size: 20px;
   }
@@ -1256,6 +1271,7 @@ button {
   background: var(--bg-elevated);
   overflow: hidden;
   font-size: 0.8125rem;
+  min-width: 0;
 }
 
 .code-block-header {
@@ -1305,7 +1321,7 @@ button {
 
 .code-block-lines-container {
   display: table;
-  width: 100%;
+  min-width: 100%;
 }
 
 .code-block-line {
@@ -1370,6 +1386,7 @@ button {
   position: relative;
   flex-direction: column;
   align-items: stretch;
+  min-width: 0;
 }
 
 .option-item.has-code > input {
