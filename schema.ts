@@ -1,22 +1,41 @@
+export interface CodeBlock {
+	code: string;
+	lang?: string;
+	file?: string;
+	lines?: string;
+	highlights?: number[];
+	title?: string;
+}
+
+export interface RichOption {
+	label: string;
+	code?: CodeBlock;
+}
+
+export type OptionValue = string | RichOption;
+
 export interface Question {
 	id: string;
 	type: "single" | "multi" | "text" | "image";
 	question: string;
-	options?: string[];
+	options?: OptionValue[];
 	recommended?: string | string[];
 	context?: string;
+	codeBlock?: CodeBlock;
 }
 
 export interface QuestionsFile {
 	title?: string;
 	description?: string;
 	questions: Question[];
-	voice?: VoiceConfig;
 }
 
-export interface VoiceConfig {
-	greeting?: string;
-	closing?: string;
+export function getOptionLabel(option: OptionValue): string {
+	return typeof option === "string" ? option : option.label;
+}
+
+export function isRichOption(option: OptionValue): option is RichOption {
+	return typeof option === "object" && option !== null && "label" in option;
 }
 
 const SCHEMA_EXAMPLE = `Expected format:
@@ -30,10 +49,58 @@ const SCHEMA_EXAMPLE = `Expected format:
   ]
 }
 Valid types: single, multi, text, image
-Options: required for single/multi, must be array of STRINGS (not objects)`;
+Options: array of strings or objects with { label, code? }`;
+
+function validateCodeBlock(block: unknown, context: string): CodeBlock {
+	if (!block || typeof block !== "object") {
+		throw new Error(`${context}: codeBlock must be an object`);
+	}
+	const b = block as Record<string, unknown>;
+	if (typeof b.code !== "string") {
+		throw new Error(`${context}: codeBlock.code must be a string`);
+	}
+	if (b.lang !== undefined && typeof b.lang !== "string") {
+		throw new Error(`${context}: codeBlock.lang must be a string`);
+	}
+	if (b.file !== undefined && typeof b.file !== "string") {
+		throw new Error(`${context}: codeBlock.file must be a string`);
+	}
+	if (b.lines !== undefined && typeof b.lines !== "string") {
+		throw new Error(`${context}: codeBlock.lines must be a string`);
+	}
+	if (b.title !== undefined && typeof b.title !== "string") {
+		throw new Error(`${context}: codeBlock.title must be a string`);
+	}
+	if (b.highlights !== undefined) {
+		if (!Array.isArray(b.highlights) || b.highlights.some((h) => typeof h !== "number")) {
+			throw new Error(`${context}: codeBlock.highlights must be an array of numbers`);
+		}
+	}
+	return b as unknown as CodeBlock;
+}
+
+function validateOption(option: unknown, questionId: string, index: number): OptionValue {
+	if (typeof option === "string") {
+		return option;
+	}
+	if (option && typeof option === "object") {
+		const o = option as Record<string, unknown>;
+		if (typeof o.label !== "string") {
+			throw new Error(
+				`Question "${questionId}": option at index ${index} must have a "label" string`
+			);
+		}
+		if (o.code !== undefined) {
+			validateCodeBlock(o.code, `Question "${questionId}" option "${o.label}"`);
+		}
+		return option as RichOption;
+	}
+	throw new Error(
+		`Question "${questionId}": option at index ${index} must be a string or object with label`
+	);
+}
 
 function validateBasicStructure(data: unknown): QuestionsFile {
-	// Check if data is an array (common mistake - should be object with questions property)
 	if (Array.isArray(data)) {
 		throw new Error(
 			`Invalid questions file: root must be an object, not an array.\n\n${SCHEMA_EXAMPLE}`
@@ -46,8 +113,7 @@ function validateBasicStructure(data: unknown): QuestionsFile {
 	
 	const obj = data as Record<string, unknown>;
 
-	// Detect common wrong field names at root level
-	if ("label" in obj || "description" in obj && !("questions" in obj)) {
+	if (("label" in obj || "description" in obj) && !("questions" in obj)) {
 		throw new Error(
 			`Invalid questions file: missing "questions" array. Did you mean to wrap your questions?\n\n${SCHEMA_EXAMPLE}`
 		);
@@ -59,19 +125,6 @@ function validateBasicStructure(data: unknown): QuestionsFile {
 	
 	if (obj.description !== undefined && typeof obj.description !== "string") {
 		throw new Error("Invalid questions file: description must be a string");
-	}
-
-	if (obj.voice !== undefined) {
-		if (!obj.voice || typeof obj.voice !== "object") {
-			throw new Error("Invalid questions file: voice must be an object");
-		}
-		const voice = obj.voice as Record<string, unknown>;
-		if (voice.greeting !== undefined && typeof voice.greeting !== "string") {
-			throw new Error("Invalid questions file: voice.greeting must be a string");
-		}
-		if (voice.closing !== undefined && typeof voice.closing !== "string") {
-			throw new Error("Invalid questions file: voice.closing must be a string");
-		}
 	}
 	
 	if (!Array.isArray(obj.questions) || obj.questions.length === 0) {
@@ -90,7 +143,6 @@ function validateBasicStructure(data: unknown): QuestionsFile {
 			throw new Error(`Invalid question at index ${i}: id must be a string`);
 		}
 
-		// Detect wrong type values
 		if (typeof q.type !== "string" || !validTypes.includes(q.type)) {
 			const hint = q.type === "select" ? ' (use "single" instead of "select")' : "";
 			throw new Error(
@@ -98,7 +150,6 @@ function validateBasicStructure(data: unknown): QuestionsFile {
 			);
 		}
 
-		// Detect wrong field names for question text
 		if (typeof q.question !== "string") {
 			const hint = "label" in q || "description" in q 
 				? ' (use "question" field, not "label" or "description")'
@@ -108,20 +159,19 @@ function validateBasicStructure(data: unknown): QuestionsFile {
 
 		if (q.options !== undefined) {
 			if (!Array.isArray(q.options) || q.options.length === 0) {
-				throw new Error(`Question "${q.id}": options must be a non-empty array of strings`);
+				throw new Error(`Question "${q.id}": options must be a non-empty array`);
 			}
-			// Detect object options (common mistake from other form libraries)
-			if (q.options.some((o: unknown) => typeof o === "object" && o !== null)) {
-				throw new Error(
-					`Question "${q.id}": options must be strings, not objects. Use ["Option A", "Option B"] instead of [{value, label}]`
-				);
-			}
-			if (q.options.some((o: unknown) => typeof o !== "string")) {
-				throw new Error(`Question "${q.id}": options must be a non-empty array of strings`);
+			for (let j = 0; j < q.options.length; j++) {
+				validateOption(q.options[j], q.id as string, j);
 			}
 		}
+
 		if (q.context !== undefined && typeof q.context !== "string") {
 			throw new Error(`Question "${q.id}": context must be a string`);
+		}
+
+		if (q.codeBlock !== undefined) {
+			validateCodeBlock(q.codeBlock, `Question "${q.id}"`);
 		}
 	}
 	
@@ -155,11 +205,13 @@ export function validateQuestions(data: unknown): QuestionsFile {
 				throw new Error(`Question "${q.id}": recommended not allowed for type "${q.type}"`);
 			}
 
+			const optionLabels = q.options?.map(getOptionLabel) ?? [];
+
 			if (q.type === "single") {
 				if (typeof q.recommended !== "string") {
 					throw new Error(`Question "${q.id}": recommended must be string for single-select`);
 				}
-				if (!q.options?.includes(q.recommended)) {
+				if (!optionLabels.includes(q.recommended)) {
 					throw new Error(
 						`Question "${q.id}": recommended "${q.recommended}" not in options`
 					);
@@ -169,7 +221,7 @@ export function validateQuestions(data: unknown): QuestionsFile {
 			if (q.type === "multi") {
 				const recs = Array.isArray(q.recommended) ? q.recommended : [q.recommended];
 				for (const rec of recs) {
-					if (!q.options?.includes(rec)) {
+					if (!optionLabels.includes(rec)) {
 						throw new Error(`Question "${q.id}": recommended "${rec}" not in options`);
 					}
 				}

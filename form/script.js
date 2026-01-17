@@ -44,7 +44,7 @@
     inSubmitArea: false,
     cards: [],
   };
-  let navDebounce = null;
+
   const session = {
     storageKey: null,
     expired: false,
@@ -384,6 +384,119 @@
     return html;
   }
 
+  function getOptionLabel(option) {
+    return typeof option === "string" ? option : option.label;
+  }
+
+  function isRichOption(option) {
+    return typeof option === "object" && option !== null && "label" in option;
+  }
+
+  function renderCodeBlock(block) {
+    if (!block || !block.code) return null;
+
+    const container = document.createElement("div");
+    container.className = "code-block";
+
+    const showLineNumbers = !!block.file || !!block.lines;
+    const isDiff = block.lang === "diff";
+    const lines = block.code.split("\n");
+    const highlights = new Set(block.highlights || []);
+    
+    // Parse starting line number from lines prop (e.g., "10-16" -> 10, "42" -> 42)
+    let startLineNum = 1;
+    if (block.lines) {
+      const match = block.lines.match(/^(\d+)/);
+      if (match) startLineNum = parseInt(match[1], 10);
+    }
+
+    if (block.file || block.lines || block.lang || block.title) {
+      const header = document.createElement("div");
+      header.className = "code-block-header";
+
+      if (block.title) {
+        const titleEl = document.createElement("span");
+        titleEl.className = "code-block-title";
+        titleEl.textContent = block.title;
+        header.appendChild(titleEl);
+      }
+
+      if (block.file) {
+        const fileEl = document.createElement("span");
+        fileEl.className = "code-block-file";
+        fileEl.textContent = block.file;
+        header.appendChild(fileEl);
+      }
+
+      if (block.lines) {
+        const linesEl = document.createElement("span");
+        linesEl.className = "code-block-lines";
+        linesEl.textContent = `L${block.lines}`;
+        header.appendChild(linesEl);
+      }
+
+      if (block.lang && block.lang !== "diff") {
+        const langEl = document.createElement("span");
+        langEl.className = "code-block-lang";
+        langEl.textContent = block.lang;
+        header.appendChild(langEl);
+      }
+
+      container.appendChild(header);
+    }
+
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+
+    if (showLineNumbers || isDiff || highlights.size > 0) {
+      const linesContainer = document.createElement("div");
+      linesContainer.className = "code-block-lines-container";
+
+      lines.forEach((lineText, i) => {
+        const lineNum = startLineNum + i;
+        const lineEl = document.createElement("div");
+        lineEl.className = "code-block-line";
+
+        if (highlights.has(i + 1)) {
+          lineEl.classList.add("highlighted");
+        }
+
+        if (isDiff) {
+          if (lineText.startsWith("+") && !lineText.startsWith("+++")) {
+            lineEl.classList.add("diff-add");
+          } else if (lineText.startsWith("-") && !lineText.startsWith("---")) {
+            lineEl.classList.add("diff-remove");
+          } else if (lineText.startsWith("@@") || lineText.startsWith("---") || lineText.startsWith("+++")) {
+            lineEl.classList.add("diff-header");
+          }
+        }
+
+        if (showLineNumbers) {
+          const numEl = document.createElement("span");
+          numEl.className = "code-block-line-number";
+          numEl.textContent = String(lineNum);
+          lineEl.appendChild(numEl);
+        }
+
+        const contentEl = document.createElement("span");
+        contentEl.className = "code-block-line-content";
+        contentEl.textContent = lineText;
+        lineEl.appendChild(contentEl);
+
+        linesContainer.appendChild(lineEl);
+      });
+
+      code.appendChild(linesContainer);
+    } else {
+      code.textContent = block.code;
+    }
+
+    pre.appendChild(code);
+    container.appendChild(pre);
+
+    return container;
+  }
+
   function isPrintableKey(event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
     return event.key.length === 1;
@@ -612,7 +725,6 @@
             fileState.delete(questionId);
             manager.render(questionId);
             onUpdate();
-            notifyAnswerUpdate(questionId);
           });
 
           item.appendChild(img);
@@ -640,7 +752,6 @@
             if (idx > -1) arr.splice(idx, 1);
             manager.render(questionId);
             onUpdate();
-            notifyAnswerUpdate(questionId);
           });
 
           item.appendChild(pathText);
@@ -861,23 +972,20 @@
     }
   }
 
-  function focusQuestion(index, fromDirection = 'next', source = 'user') {
+  function focusQuestion(index, fromDirection = 'next') {
     if (index < 0 || index >= nav.cards.length) return;
     
     deactivateSubmitArea();
     
     const prevCard = nav.cards[nav.questionIndex];
     if (prevCard) {
-      prevCard.classList.remove('active', 'keyboard-nav', 'voice-focus');
+      prevCard.classList.remove('active', 'keyboard-nav');
       clearOptionHighlight(prevCard);
     }
     
     nav.questionIndex = index;
     const card = nav.cards[index];
     card.classList.add('active');
-    if (source === 'voice') {
-      card.classList.add('voice-focus');
-    }
     ensureElementVisible(card);
     
     const options = getOptionsForCard(card);
@@ -897,28 +1005,6 @@
       }
     }
 
-    if (source === 'user') {
-      onUserNavigatedTo(index);
-    }
-  }
-
-  function onUserNavigatedTo(questionIndex) {
-    const voice = window.VoiceController;
-    if (!voice || !voice.isActive || !voice.isActive()) return;
-    const question = questions[questionIndex];
-    if (!question) return;
-
-    voice.syncCurrentQuestion?.(questionIndex);
-    clearTimeout(navDebounce);
-    navDebounce = setTimeout(() => {
-      voice.injectContext?.({
-        type: "user_navigation",
-        questionId: question.id,
-        questionIndex: questionIndex + 1,
-        questionText: question.question,
-        currentAnswer: getQuestionValue(question) || null,
-      });
-    }, 300);
   }
 
   function nextQuestion() {
@@ -1154,6 +1240,14 @@
       card.appendChild(context);
     }
 
+    if (question.codeBlock) {
+      const codeBlockEl = renderCodeBlock(question.codeBlock);
+      if (codeBlockEl) {
+        codeBlockEl.classList.add("question-code-block");
+        card.appendChild(codeBlockEl);
+      }
+    }
+
     if (question.type === "single" || question.type === "multi") {
       const list = document.createElement("div");
       list.className = "option-list";
@@ -1168,13 +1262,19 @@
           : [];
 
       question.options.forEach((option, optionIndex) => {
+        const optionLabel = getOptionLabel(option);
+        const optionCode = isRichOption(option) ? option.code : null;
+
         const label = document.createElement("label");
         label.className = "option-item";
+        if (optionCode) {
+          label.classList.add("has-code");
+        }
 
         const input = document.createElement("input");
         input.type = question.type === "single" ? "radio" : "checkbox";
         input.name = question.id;
-        input.value = option;
+        input.value = optionLabel;
         input.id = `q-${question.id}-${optionIndex}`;
 
         input.addEventListener("change", () => {
@@ -1182,13 +1282,12 @@
           if (question.type === "multi") {
             updateDoneState(question.id);
           }
-          notifyAnswerUpdate(question.id);
         });
 
         const text = document.createElement("span");
-        text.textContent = option;
+        text.textContent = optionLabel;
         
-        if (recommendedList.includes(option)) {
+        if (recommendedList.includes(optionLabel)) {
           const star = document.createElement("span");
           star.className = "recommended-star";
           star.textContent = "*";
@@ -1197,6 +1296,14 @@
 
         label.appendChild(input);
         label.appendChild(text);
+
+        if (optionCode) {
+          const codeBlockEl = renderCodeBlock(optionCode);
+          if (codeBlockEl) {
+            label.appendChild(codeBlockEl);
+          }
+        }
+
         list.appendChild(label);
       });
 
@@ -1218,21 +1325,18 @@
           if (question.type === "multi") updateDoneState(question.id);
         }
         debounceSave();
-        notifyAnswerUpdate(question.id);
       });
       otherInput.addEventListener("focus", () => {
         if (!otherCheck.checked) {
           otherCheck.checked = true;
           if (question.type === "multi") updateDoneState(question.id);
           debounceSave();
-          notifyAnswerUpdate(question.id);
         }
       });
       otherCheck.addEventListener("change", () => {
         debounceSave();
         if (question.type === "multi") updateDoneState(question.id);
         if (otherCheck.checked) otherInput.focus();
-        notifyAnswerUpdate(question.id);
       });
       setupEdgeNavigation(otherInput);
       otherLabel.appendChild(otherCheck);
@@ -1268,7 +1372,6 @@
       textarea.dataset.questionId = question.id;
       textarea.addEventListener("input", () => {
         debounceSave();
-        notifyAnswerUpdate(question.id);
       });
       setupEdgeNavigation(textarea);
       card.appendChild(textarea);
@@ -1319,7 +1422,6 @@
           e.stopPropagation();
           questionImages.addPath(question.id, normalizePath(pathInput.value.trim()));
           pathInput.value = "";
-          notifyAnswerUpdate(question.id);
         }
       });
       setupEdgeNavigation(pathInput);
@@ -1545,7 +1647,6 @@
     if (input) input.value = "";
     questionImages.removeFile(id);
     setFieldError(id, "");
-    notifyAnswerUpdate(id);
   }
 
   async function handleFileChange(questionId, input, manager, options = {}) {
@@ -1579,7 +1680,6 @@
     }
 
     manager.addFile(questionId, file);
-    notifyAnswerUpdate(questionId);
   }
 
   function resolveQuestionContext(target) {
@@ -1636,7 +1736,6 @@
       revealAttachmentArea(question.id);
       attachments.addFile(question.id, file);
     }
-    notifyAnswerUpdate(question.id);
   }
 
   function handlePaste(event) {
@@ -1667,7 +1766,6 @@
       const normalizedPath = normalizePath(text);
       if (context.question.type === "image") {
         questionImages.addPath(context.question.id, normalizedPath);
-        notifyAnswerUpdate(context.question.id);
       } else {
         revealAttachmentArea(context.question.id);
         attachments.addPath(context.question.id, normalizedPath);
@@ -1712,39 +1810,6 @@
       return questionImages.getPaths(id);
     }
     return "";
-  }
-
-  function getAnsweredQuestionIds() {
-    return questions
-      .filter((q) => {
-        if (q.type === "image") {
-          return questionImages.hasContent(q.id);
-        }
-        const value = getQuestionValue(q);
-        if (Array.isArray(value)) return value.length > 0;
-        return value !== "";
-      })
-      .map((q) => q.id);
-  }
-
-  function getAllUnanswered() {
-    const answered = new Set(getAnsweredQuestionIds());
-    return questions
-      .map((question, index) => ({ question, index }))
-      .filter(({ question }) => !answered.has(question.id));
-  }
-
-  function notifyAnswerUpdate(questionId) {
-    const voice = window.VoiceController;
-    if (!voice || !voice.isActive || !voice.isActive()) return;
-    const question = questions.find((q) => q.id === questionId);
-    if (!question) return;
-    voice.injectContext?.({
-      type: "answer_updated",
-      questionId,
-      value: getQuestionValue(question),
-    });
-    voice.injectContext?.({ type: "sync_state" });
   }
 
   function collectResponses() {
@@ -1945,8 +2010,7 @@
       }
     }
 
-    const transcript = window.VoiceController?.getTranscript?.();
-    return { responses, images, transcript: transcript && transcript.length ? transcript : undefined };
+    return { responses, images };
   }
 
   async function submitForm(event) {
@@ -2137,15 +2201,12 @@
     data,
     focusQuestion,
     getQuestionValue,
-    getAnsweredQuestionIds,
-    getAllUnanswered,
     debounceSave,
     escapeSelector,
     populateForm,
     updateDoneState,
     setFieldError,
     clearFieldErrors,
-    notifyAnswerUpdate,
   };
 
   init();

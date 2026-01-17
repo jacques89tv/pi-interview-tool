@@ -6,9 +6,9 @@ import * as os from "node:os";
 import * as fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
-import { startInterviewServer, getActiveSessions, type ResponseItem, type TranscriptEntry } from "./server.js";
+import { startInterviewServer, getActiveSessions, type ResponseItem } from "./server.js";
 import { validateQuestions, type QuestionsFile } from "./schema.js";
-import { loadSettings, updateVoiceSettings, type InterviewSettings, type InterviewThemeSettings } from "./settings.js";
+import { loadSettings, type InterviewThemeSettings } from "./settings.js";
 
 function formatTimeAgo(timestamp: number): string {
 	const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -52,7 +52,6 @@ interface InterviewDetails {
 	responses: ResponseItem[];
 	url: string;
 	queuedMessage?: string;
-	transcript?: TranscriptEntry[];
 }
 
 const InterviewParams = Type.Object({
@@ -61,9 +60,6 @@ const InterviewParams = Type.Object({
 		Type.Number({ description: "Seconds before auto-timeout", default: 600 })
 	),
 	verbose: Type.Optional(Type.Boolean({ description: "Enable debug logging", default: false })),
-	voice: Type.Optional(
-		Type.Boolean({ description: "Enable voice auto-start (persists to settings)" })
-	),
 	theme: Type.Optional(
 		Type.Object(
 			{
@@ -78,8 +74,6 @@ const InterviewParams = Type.Object({
 	),
 });
 
-
-
 function expandHome(value: string): string {
 	if (value.startsWith("~" + path.sep)) {
 		return path.join(os.homedir(), value.slice(2));
@@ -93,15 +87,17 @@ function resolveOptionalPath(value: string | undefined, cwd: string): string | u
 	return path.isAbsolute(expanded) ? expanded : path.join(cwd, expanded);
 }
 
+const DEFAULT_THEME_HOTKEY = "mod+shift+l";
+
 function mergeThemeConfig(
 	base: InterviewThemeSettings | undefined,
 	override: InterviewThemeSettings | undefined,
 	cwd: string
-): InterviewThemeSettings | undefined {
-	if (!base && !override) return undefined;
+): InterviewThemeSettings {
 	const merged: InterviewThemeSettings = { ...(base ?? {}), ...(override ?? {}) };
 	return {
 		...merged,
+		toggleHotkey: merged.toggleHotkey ?? DEFAULT_THEME_HOTKEY,
 		lightPath: resolveOptionalPath(merged.lightPath, cwd),
 		darkPath: resolveOptionalPath(merged.darkPath, cwd),
 	};
@@ -152,16 +148,16 @@ export default function (pi: ExtensionAPI) {
 			"exploring design tradeoffs, or when decisions have multiple dimensions worth discussing. " +
 			"Provides better UX than back-and-forth chat for structured input. " +
 			"Image responses and attachments are returned as file paths - use read tool directly to display them. " +
-			'Questions JSON format: { "title": "...", "questions": [{ "id": "q1", "type": "single|multi|text|image", "question": "...", "options": ["A", "B"] }] }. ' +
-			"Options must be plain strings (not objects). Types: single (radio), multi (checkbox), text (textarea), image (file upload).",
+			'Questions JSON format: { "title": "...", "questions": [{ "id": "q1", "type": "single|multi|text|image", "question": "...", "options": ["A", "B"], "codeBlock": { "code": "...", "lang": "ts" } }] }. ' +
+			"Options can be strings or objects: { label: string, code?: { code, lang?, file?, lines?, highlights? } }. " +
+			"Questions can have a codeBlock field to display code above options. Types: single (radio), multi (checkbox), text (textarea), image (file upload).",
 		parameters: InterviewParams,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
-			const { questions, timeout, verbose, voice, theme } = params as {
+			const { questions, timeout, verbose, theme } = params as {
 				questions: string;
 				timeout?: number;
 				verbose?: boolean;
-				voice?: boolean;
 				theme?: InterviewThemeSettings;
 			};
 
@@ -183,12 +179,6 @@ export default function (pi: ExtensionAPI) {
 			const timeoutSeconds = timeout ?? settings.timeout ?? 600;
 			const themeConfig = mergeThemeConfig(settings.theme, theme, ctx.cwd);
 			const questionsData = loadQuestions(questions, ctx.cwd);
-			const voiceApiKey = settings.voice?.apiKey;
-
-			if (voice !== undefined) {
-				updateVoiceSettings({ autoStart: voice });
-			}
-			const voiceAutoStart = voice ?? settings.voice?.autoStart ?? false;
 
 			if (signal?.aborted) {
 				return {
@@ -214,8 +204,7 @@ export default function (pi: ExtensionAPI) {
 				const finish = (
 					status: InterviewDetails["status"],
 					responses: ResponseItem[] = [],
-					cancelReason?: "timeout" | "user" | "stale",
-					transcript?: TranscriptEntry[]
+					cancelReason?: "timeout" | "user" | "stale"
 				) => {
 					if (resolved) return;
 					resolved = true;
@@ -239,7 +228,7 @@ export default function (pi: ExtensionAPI) {
 
 					resolve({
 						content: [{ type: "text", text }],
-						details: { status, url, responses, transcript },
+						details: { status, url, responses },
 					});
 				};
 
@@ -256,11 +245,9 @@ export default function (pi: ExtensionAPI) {
 						port: settings.port,
 						verbose,
 						theme: themeConfig,
-						voiceApiKey,
-						voiceAutoStart,
 					},
 					{
-						onSubmit: (responses, transcript) => finish("completed", responses, undefined, transcript),
+						onSubmit: (responses) => finish("completed", responses),
 						onCancel: (reason) =>
 							reason === "timeout" ? finish("timeout") : finish("cancelled", [], reason),
 					}
@@ -324,7 +311,6 @@ export default function (pi: ExtensionAPI) {
 								reject(new Error(`Failed to open browser: ${message}`));
 								return;
 							}
-
 						}
 					})
 					.catch((err) => {

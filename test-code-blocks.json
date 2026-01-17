@@ -1,0 +1,59 @@
+{
+  "title": "Code Block Test",
+  "description": "Testing code block rendering in questions and options",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "question": "Question with code block above options",
+      "context": "Review the current implementation:",
+      "codeBlock": {
+        "code": "function calculateTotal(items) {\n  let total = 0;\n  for (const item of items) {\n    total += item.price * item.quantity;\n  }\n  return total;\n}",
+        "lang": "ts",
+        "file": "src/cart.ts",
+        "lines": "10-16",
+        "highlights": [3, 4]
+      },
+      "options": ["Keep it", "Refactor it", "Delete it"]
+    },
+    {
+      "id": "q2",
+      "type": "single",
+      "question": "Which implementation approach?",
+      "options": [
+        {
+          "label": "Use reduce",
+          "code": {
+            "code": "const total = items.reduce(\n  (sum, item) => sum + item.price * item.quantity,\n  0\n);",
+            "lang": "ts"
+          }
+        },
+        {
+          "label": "Use for...of loop",
+          "code": {
+            "code": "let total = 0;\nfor (const item of items) {\n  total += item.price * item.quantity;\n}",
+            "lang": "ts"
+          }
+        },
+        "Keep current implementation"
+      ],
+      "recommended": "Use reduce"
+    },
+    {
+      "id": "q3",
+      "type": "single",
+      "question": "Review this diff - should we merge?",
+      "codeBlock": {
+        "code": "--- a/src/cart.ts\n+++ b/src/cart.ts\n@@ -10,6 +10,8 @@\n function calculateTotal(items) {\n   let total = 0;\n   for (const item of items) {\n+    if (item.quantity < 0) continue;\n     total += item.price * item.quantity;\n   }\n   return total;\n }",
+        "lang": "diff",
+        "file": "src/cart.ts"
+      },
+      "options": ["Approve", "Request changes", "Need more context"]
+    },
+    {
+      "id": "q4",
+      "type": "text",
+      "question": "Any comments on the code?"
+    }
+  ]
+}

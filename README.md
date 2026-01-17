@@ -23,8 +23,6 @@ The tool is automatically discovered on next pi session. No build step required.
 
 ## Features
 
-- **Voice Mode** *(experimental)*: Natural voice interviewing via ElevenLabs (questions read aloud, answers via speech)
-- **Voice Settings**: Select voice, adjust volume, preview voices via settings modal
 - **Question Types**: Single-select, multi-select, text input, and image upload
 - **"Other" Option**: Single/multi select questions support custom text input
 - **Per-Question Attachments**: Attach images to any question via button, paste, or drag & drop
@@ -120,9 +118,70 @@ await interview({
 | `id` | string | Unique identifier |
 | `type` | string | `single`, `multi`, `text`, or `image` |
 | `question` | string | Question text |
-| `options` | string[] | Choices (required for single/multi) |
+| `options` | string[] or object[] | Choices (required for single/multi). Can be strings or `{ label, code? }` objects |
 | `recommended` | string or string[] | Highlighted option(s) with `*` indicator |
 | `context` | string | Help text shown below question |
+| `codeBlock` | object | Code block displayed below question text |
+
+### Code Blocks
+
+Questions and options can include code blocks for displaying code snippets, diffs, and file references.
+
+**Question-level code block** (displayed above options):
+```json
+{
+  "id": "review",
+  "type": "single",
+  "question": "Review this implementation",
+  "codeBlock": {
+    "code": "function add(a, b) {\n  return a + b;\n}",
+    "lang": "ts",
+    "file": "src/math.ts",
+    "lines": "10-12",
+    "highlights": [2]
+  },
+  "options": ["Approve", "Request changes"]
+}
+```
+
+**Options with code blocks**:
+```json
+{
+  "options": [
+    {
+      "label": "Use async/await",
+      "code": { "code": "const data = await fetch(url);", "lang": "ts" }
+    },
+    {
+      "label": "Use promises",
+      "code": { "code": "fetch(url).then(data => ...);", "lang": "ts" }
+    },
+    "Keep current implementation"
+  ]
+}
+```
+
+**Diff display** (set `lang: "diff"`):
+```json
+{
+  "codeBlock": {
+    "code": "--- a/file.ts\n+++ b/file.ts\n@@ -1,3 +1,4 @@\n const x = 1;\n+const y = 2;\n const z = 3;",
+    "lang": "diff",
+    "file": "src/file.ts"
+  }
+}
+```
+
+| CodeBlock Field | Type | Description |
+|-----------------|------|-------------|
+| `code` | string | The code content (required) |
+| `lang` | string | Language for display (e.g., "ts", "diff") |
+| `file` | string | File path to display in header |
+| `lines` | string | Line range to display (e.g., "10-25") |
+| `highlights` | number[] | Line numbers to highlight |
+| `title` | string | Optional title above code |
+
+Line numbers are shown when `file` or `lines` is specified. Diff syntax (`+`/`-` lines) is automatically styled when `lang` is "diff".
 
 ## Keyboard Shortcuts
 
@@ -134,8 +193,7 @@ await interview({
 | `Enter` / `Space` | Select option |
 | `⌘+V` | Paste image or file path |
 | `⌘+Enter` | Submit form |
-| `v` | Toggle voice mode |
-| `Esc` | Stop voice mode / Show exit overlay (press twice to quit) |
+| `Esc` | Show exit overlay (press twice to quit) |
 | `⌘+Shift+L` | Toggle theme (if enabled; appears in shortcuts bar) |
 
 ## Configuration
@@ -153,12 +211,6 @@ Settings in `~/.pi/agent/settings.json`:
       "lightPath": "/path/to/light.css",
       "darkPath": "/path/to/dark.css",
       "toggleHotkey": "mod+shift+l"
-    },
-    "voice": {
-      "apiKey": "sk-your-elevenlabs-key",
-      "autoStart": true,
-      "voiceId": "21m00Tcm4TlvDq8ikWAM",
-      "volume": 0.7
     }
   }
 }
@@ -166,21 +218,9 @@ Settings in `~/.pi/agent/settings.json`:
 
 **Timeout precedence**: params > settings > default (600s)
 
-**Port setting**: Set a fixed `port` (e.g., `19847`) to persist browser permissions (microphone) across sessions. Without this, each interview runs on a random port and permissions must be re-granted.
+**Port setting**: Set a fixed `port` (e.g., `19847`) to use a consistent port across sessions.
 
-**Voice settings** *(experimental — not fully tested)*:
-| Field | Description |
-|-------|-------------|
-| `apiKey` | ElevenLabs API key (server-side, never sent to client) |
-| `autoStart` | Auto-start voice on form load |
-| `voiceId` | ElevenLabs voice ID (default: Rachel) |
-| `volume` | Output volume 0.0-1.0 (default: 0.7) |
-
-**ElevenLabs API key permissions**: When creating or editing your API key at [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys), enable these permissions:
-- **ElevenLabs Agents**: Write (required for creating conversational AI agents)
-- **Voices**: Read (required for voice selection in settings)
-
-Theme notes:
+**Theme notes:**
 - `mode`: `dark` (default), `light`, or `auto` (follows OS unless overridden)
 - `name`: built-in themes are `default` and `tufte`
 - `lightPath` / `darkPath`: optional CSS file paths (absolute or relative to cwd)
@@ -276,14 +316,11 @@ interview/
 ├── settings.ts    # Shared settings module
 ├── server.ts      # HTTP server, request handling
 ├── schema.ts      # TypeScript interfaces for questions/responses
-├── elevenlabs.ts  # ElevenLabs API integration
 └── form/
     ├── index.html # Form template
     ├── styles.css # Base styles (dark tokens)
     ├── themes/    # Theme overrides (light/dark)
-    ├── script.js  # Form logic, keyboard nav, image handling
-    ├── settings.js # Settings modal controller
-    └── voice.js   # Voice controller module
+    └── script.js  # Form logic, keyboard nav, image handling
 ```
 
 ## Session Recovery

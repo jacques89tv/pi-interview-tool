@@ -1,42 +1,40 @@
 # Changelog
 
-## Unreleased
+## 2026-01-17
 
 ### Added
-- **Interview Settings Modal**: Gear icon button in header opens settings dialog
-  - Voice selection dropdown populated from ElevenLabs API (with 5-minute cache)
-  - Voice preview button to hear samples before selecting
-  - Volume slider with percentage display (persists to settings.json)
-  - Inline volume control in voice indicator for quick mid-conversation adjustment
-  - Focus trap for accessibility (Tab/Shift+Tab cycling)
-  - Auto-restart voice session when voice changes
+- **Code blocks**: Display code snippets in questions and options
+  - Question-level `codeBlock` field shown below question text, above options
+  - Rich options: options can be `{ label, code? }` objects instead of plain strings
+  - Syntax highlighting for diff (`lang: "diff"`) with green/red line coloring
+  - Optional file path and line range display in header
+  - Line highlighting via `highlights` array
+  - Line numbers shown when `file` or `lines` specified
 - **Light markdown in questions**: Question titles and context now render `**bold**`, `` `code` ``, and auto-break numbered lists
-- **Voice auto-submit**: Form automatically submits after all questions answered (3s delay)
-- **Voice stop via Escape**: Press Escape key to stop voice mode
-- **Fixed port setting**: Configure `port` in settings to persist browser permissions (microphone) across sessions
+- **Default theme toggle hotkey**: `Cmd+Shift+L` (Mac) / `Ctrl+Shift+L` (Windows/Linux) now works out of the box
+- **Fixed port setting**: Configure `port` in settings to use a consistent port across sessions
 - Shared settings module (`settings.ts`) for consistent settings access across tool and server
-- Volume passed in inline page data to eliminate async initialization race condition
-- ElevenLabs API key permissions documented in README
+
+### Removed
+- **Voice mode**: Removed ElevenLabs voice interview integration entirely
+  - Deleted `elevenlabs.ts`, `form/voice.js`, `form/settings.js`
+  - Removed voice toggle button, voice indicator, settings modal, API key modal from HTML
+  - Removed all voice-related CSS styles and CSS variables
+  - Removed `v` keyboard shortcut for voice toggle
+  - Simplified settings.ts (removed voice settings and updateVoiceSettings)
+  - Removed transcript handling from server and responses
 
 ### Changed
-- Voice mode marked as experimental in README and settings modal
 - Migrated from `~/.pi/agent/tools/` to `~/.pi/agent/extensions/` folder structure (pi-mono v0.35.0)
 - Updated to new extension API: `CustomToolFactory` -> `ExtensionAPI` with `pi.registerTool()`
-- Voice agent creation now uses configured voiceId from settings (default: Rachel)
-- Voice mode no longer auto-advances form after capturing answer (lets AI control flow)
-- Voice agent prompt updated with patience instructions (no pushy follow-ups during silence)
-- Voice toggle icon increased from 18px to 24px
+- Options can now be strings OR objects with `{ label, code? }` structure
 
 ### Fixed
 - Radio/checkbox alignment on multi-line option text (now aligns to top)
 - `fileInput is not defined` error in keyboard handler
 - `pi.cwd` changed to `ctx.cwd` in tool execute function
-- Removed redundant microphone permission pre-check (ElevenLabs SDK handles it)
 - **Paste handling**: Regular text no longer intercepted as image attachment; only paths ending with image extensions (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) are treated as attachments
 - **Image limit enforcement**: `MAX_IMAGES` limit now consistently enforced for both question images and attachments (was only checking question images)
-- **Voice mode sync**: Pasted/dropped images and removed images now properly notify voice controller
-  - Added `notifyAnswerUpdate` to `addPastedImage`, paste handler for paths, `clearImage`, and remove button handlers
-  - Voice mode now correctly tracks answered/unanswered state after image operations
 
 ---
 
