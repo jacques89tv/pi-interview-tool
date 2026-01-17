@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nicobailon/pi-interview-tool.git"
+    "url": "git+https://github.com/nicobailon/pi-interview-tool.git"
   },
   "keywords": [
     "pi",
@@ -17,7 +17,7 @@
     "cli"
   ],
   "bin": {
-    "pi-interview": "./bin/install.js"
+    "pi-interview": "bin/install.js"
   },
   "files": [
     "bin/",
